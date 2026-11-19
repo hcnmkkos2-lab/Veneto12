@@ -92,6 +92,27 @@ def migrate():
             "VALUES (?, ?, ?, ?)",
             ((*category, utc_now()) for category in categories),
         )
+        arabic_sweets = db.execute(
+            "SELECT id FROM product_categories WHERE slug='arabic-sweets' AND active=1"
+        ).fetchone()
+        if arabic_sweets:
+            saadah_count = db.execute(
+                "SELECT COUNT(*) FROM products WHERE category_id=? AND name_ar='طبق سعاده'",
+                (arabic_sweets["id"],),
+            ).fetchone()[0]
+            for sort_order in range(saadah_count, 2):
+                db.execute(
+                    "INSERT INTO products "
+                    "(category_id,name_ar,description_ar,price_iqd,available,featured,is_new,"
+                    "sort_order,created_at,updated_at) "
+                    "VALUES (?, 'طبق سعاده', '', 5000, 1, 0, 1, ?, ?, ?)",
+                    (
+                        arabic_sweets["id"],
+                        sort_order + 1,
+                        utc_now(),
+                        utc_now(),
+                    ),
+                )
 
         username = os.environ.get("ADMIN_USERNAME", "").strip()
         password = os.environ.get("ADMIN_PASSWORD", "")

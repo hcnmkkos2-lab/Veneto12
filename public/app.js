@@ -421,6 +421,7 @@ async function init() {
         variantName: variant?.name_ar || "", price, quantity: 1, lineTotal: price,
       });
     }
+    renderCart();
     try {
       await saveCart();
       const message = document.documentElement.lang === "en"
@@ -478,6 +479,7 @@ async function init() {
       state.cart[index].quantity += Number(change.dataset.change);
       if (state.cart[index].quantity <= 0) state.cart.splice(index, 1);
     }
+    renderCart();
     try {
       await saveCart();
       renderCheckoutSummary();
