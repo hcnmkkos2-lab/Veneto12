@@ -277,6 +277,20 @@ class PlatformTests(unittest.TestCase):
             self.assertTrue(server.store_status(db, datetime(2026, 1, 6, 1, 59, tzinfo=zone)))
             self.assertFalse(server.store_status(db, datetime(2026, 1, 6, 2, 0, tzinfo=zone)))
 
+    def test_working_hours_roll_over_week_and_normalize_aware_time(self):
+        with database.connect() as db:
+            db.execute("UPDATE working_hours SET active=0")
+            db.execute(
+                "UPDATE working_hours SET opens_at='12:00',closes_at='02:00',active=1 "
+                "WHERE weekday=6"
+            )
+            baghdad = ZoneInfo("Asia/Baghdad")
+            self.assertTrue(server.store_status(db, datetime(2026, 1, 4, 23, 59, tzinfo=baghdad)))
+            self.assertTrue(server.store_status(db, datetime(2026, 1, 4, 22, 0, tzinfo=ZoneInfo("UTC"))))
+            self.assertTrue(server.store_status(db, datetime(2026, 1, 5, 1, 59, tzinfo=baghdad)))
+            self.assertFalse(server.store_status(db, datetime(2026, 1, 5, 2, 0, tzinfo=baghdad)))
+            self.assertTrue(server.store_status(db, datetime(2026, 1, 4, 23, 59)))
+
     def test_working_hours_equal_open_close_is_open_for_that_day(self):
         with database.connect() as db:
             db.execute("UPDATE working_hours SET active=0")

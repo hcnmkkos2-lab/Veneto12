@@ -67,7 +67,12 @@ def set_setting(db, key, value):
 
 
 def store_status(db, now=None):
-    local_now = now or datetime.now(TIMEZONE)
+    if now is None:
+        local_now = datetime.now(TIMEZONE)
+    elif now.tzinfo is None:
+        local_now = now.replace(tzinfo=TIMEZONE)
+    else:
+        local_now = now.astimezone(TIMEZONE)
     minute = local_now.hour * 60 + local_now.minute
     weekday = local_now.weekday()
     hours = db.execute("SELECT * FROM working_hours ORDER BY weekday").fetchall()

@@ -8,6 +8,7 @@ const state = {
   collectionGroup: "featured",
   collections: {},
   storeOpen: false,
+  storeStatusAvailable: false,
   cashPaymentEnabled: true,
 };
 
@@ -242,13 +243,13 @@ function renderCheckoutSummary() {
 
 function renderStore(data) {
   state.storeOpen = data.isOpen;
-  const status = $("#store-status");
-  status.textContent = data.storeStatus;
+  state.storeStatusAvailable = true;
   $("#announcement").classList.toggle("is-closed", !data.isOpen);
   $("#store-status-badge").classList.toggle("is-closed", !data.isOpen);
   $("#store-status-badge-text").textContent = data.isOpen
     ? (document.documentElement.lang === "en" ? "Open now" : "مفتوح الآن")
     : (document.documentElement.lang === "en" ? "Closed now" : "مغلق الآن");
+  $("#closed-note").textContent = "المتجر مغلق الآن. يمكنكم تصفح القائمة، لكن لا يمكن تأكيد الطلب حالياً.";
   const settings = data.settings || {};
   state.cashPaymentEnabled = settings.payment_cash_enabled !== "0";
   $("#cash-disabled-note").classList.toggle("hidden", state.cashPaymentEnabled);
@@ -321,25 +322,23 @@ function applyLanguage(language) {
   }
   const menuButton = document.querySelector(".hero-actions .button-light");
   if (menuButton) menuButton.innerHTML = isEnglish ? "Explore our menu <span>←</span>" : "اكتشفوا قائمتنا <span>←</span>";
-  renderStoreFromCurrentState();
-}
-
-async function renderStoreFromCurrentState() {
-  try {
-    renderStore(await api("/api/store"));
-  } catch (_) {
-    markStoreStatusUnavailable();
+  if (state.storeStatusAvailable) {
+    $("#store-status-badge-text").textContent = state.storeOpen
+      ? (isEnglish ? "Open now" : "مفتوح الآن")
+      : (isEnglish ? "Closed now" : "مغلق الآن");
   }
 }
 
 function markStoreStatusUnavailable() {
   state.storeOpen = false;
-  $("#store-status").textContent = "تعذر التحقق من حالة المتجر";
+  state.storeStatusAvailable = false;
   $("#announcement").classList.add("is-closed");
-  $("#store-status-badge").classList.add("is-closed");
+  $("#store-status-badge").classList.remove("is-closed");
   $("#store-status-badge-text").textContent = "تعذر التحقق من الحالة";
-  $("#place-order").disabled = true;
+  $("#closed-note").textContent = "تعذر التحقق من حالة المتجر. يرجى المحاولة لاحقاً.";
   $("#closed-note").classList.remove("hidden");
+  renderCart();
+  if ($("#checkout-dialog").open) renderCheckoutSummary();
 }
 
 async function init() {
@@ -351,14 +350,17 @@ async function init() {
   $("#theme-toggle").innerHTML = `<span aria-hidden="true">${savedTheme === "dark" ? "☀" : "☾"}</span>`;
   applyLanguage(localStorage.getItem("venito-language") === "en" ? "en" : "ar");
   try {
-    const [store, categories] = await Promise.all([api("/api/store"), api("/api/categories")]);
-    renderStore(store);
-    state.categories = categories;
+    renderStore(await api("/api/store"));
+  } catch (error) {
+    toast(error.message);
+    markStoreStatusUnavailable();
+  }
+  try {
+    state.categories = await api("/api/categories");
     renderCategories();
     await Promise.all([loadProducts(), loadCart(), loadAreas(), loadCollections()]);
   } catch (error) {
     toast(error.message);
-    markStoreStatusUnavailable();
   }
 
   $("#categories").addEventListener("click", (event) => {
@@ -548,15 +550,26 @@ async function init() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeCart();
   });
-  window.setInterval(async () => {
+  const refreshStoreStatus = async () => {
     try {
       renderStore(await api("/api/store"));
-      await loadCollections();
     } catch (error) {
       markStoreStatusUnavailable();
-      toast(`تعذر تحديث حالة المتجر: ${error.message}`);
+      console.error("تعذر تحديث حالة المتجر:", error);
+    }
+  };
+  window.setInterval(refreshStoreStatus, 30_000);
+  window.setInterval(async () => {
+    try {
+      await loadCollections();
+    } catch (error) {
+      console.error("تعذر تحديث المنتجات المميزة:", error);
     }
   }, 60_000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refreshStoreStatus();
+  });
+  window.addEventListener("focus", refreshStoreStatus);
 }
 
 init();
