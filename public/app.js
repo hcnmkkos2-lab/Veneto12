@@ -527,6 +527,12 @@ async function init() {
       $("#mobile-menu-toggle").setAttribute("aria-expanded", "false");
     }
   });
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 820) {
+      $("#main-nav").classList.remove("open");
+      $("#mobile-menu-toggle").setAttribute("aria-expanded", "false");
+    }
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeCart();
   });
