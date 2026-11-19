@@ -22,6 +22,7 @@ const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
 }[char]));
 let toastTimer;
 let notificationTimer;
+let currentReceiptUrl = "";
 
 function showNotification(message) {
   const island = $("#notification-island");
@@ -550,6 +551,12 @@ async function init() {
       const order = await api("/api/orders", { method: "POST", body: JSON.stringify(payload) });
       $("#checkout-dialog").close();
       $("#confirmed-order-number").textContent = order.orderNumber;
+      currentReceiptUrl = order.receiptUrl;
+      const receiptDownload = $("#receipt-download");
+      receiptDownload.href = currentReceiptUrl;
+      receiptDownload.download = `VENTO-${order.receiptNumber}.pdf`;
+      receiptDownload.hidden = !currentReceiptUrl;
+      $("#share-receipt").hidden = !currentReceiptUrl;
       $("#success-delivery-note").textContent = order.deliveryFeeDetermined
         ? "الدفع نقداً عند الاستلام. سنتواصل معكم لتأكيد التفاصيل."
         : "تم استلام طلبكم. أجرة التوصيل لهذه المنطقة يحدد لاحقاً، وسنتواصل معكم قبل التسليم.";
@@ -569,6 +576,32 @@ async function init() {
       submit.disabled = !state.storeOpen || !state.cashPaymentEnabled || !state.cart.length
         || !state.areas.some((area) => String(area.id) === state.selectedAreaId);
       submit.innerHTML = 'تأكيد الطلب <span>←</span>';
+    }
+  });
+  $("#share-receipt").addEventListener("click", async () => {
+    if (!currentReceiptUrl) return;
+    try {
+      if (navigator.share && typeof File !== "undefined") {
+        const response = await fetch(currentReceiptUrl, { credentials: "same-origin" });
+        if (!response.ok) throw new Error("تعذر تحميل الإيصال لمشاركته.");
+        const file = new File([await response.blob()], $("#receipt-download").download, {
+          type: "application/pdf",
+        });
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file], title: "إيصال طلب VENTO" });
+          return;
+        }
+      }
+      if (navigator.share) {
+        await navigator.share({
+          title: "إيصال طلب VENTO",
+          url: new URL(currentReceiptUrl, window.location.origin).href,
+        });
+      } else {
+        toast("نزّلوا الإيصال PDF ثم شاركوه من الهاتف.");
+      }
+    } catch (error) {
+      if (error.name !== "AbortError") toast(error.message);
     }
   });
   $("#success-done").addEventListener("click", () => $("#success-dialog").close());

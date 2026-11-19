@@ -1,5 +1,8 @@
+import base64
+import binascii
 import hashlib
 import hmac
+import io
 import json
 import os
 import re
@@ -8,14 +11,30 @@ import socket
 import sqlite3
 import time
 import textwrap
+import smtplib
+import ssl
+from email.message import EmailMessage
 from datetime import datetime, timedelta, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from xml.sax.saxutils import escape
 from urllib.parse import parse_qs, unquote, urlparse
 from zoneinfo import ZoneInfo
 
+import arabic_reshaper
 import database
+from PIL import Image as PILImage
+from bidi.algorithm import get_display
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from reportlab.lib.pagesizes import A5
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 ROOT = Path(__file__).resolve().parent
@@ -33,7 +52,12 @@ STATUSES = {
 DISTRICTS = {"karkh": "الكرخ", "rusafa": "الرصافة"}
 PHONE_RE = re.compile(r"^[0-9]{7,15}$")
 MAX_BODY = 1_000_000
+MAX_IMAGE_BYTES = 600 * 1024
 LOGIN_ATTEMPTS = {}
+ADMIN_OTP_EMAIL = os.environ.get("ADMIN_OTP_EMAIL", "").strip()
+OTP_SEND_ATTEMPTS = {}
+RECEIPT_FONT = "VentoArabic"
+pdfmetrics.registerFont(TTFont(RECEIPT_FONT, str(ROOT / "assets" / "fonts" / "DejaVuSans.ttf")))
 
 
 class APIError(Exception):
@@ -67,6 +91,8 @@ def set_setting(db, key, value):
 
 
 def store_status(db, now=None):
+    if get_setting(db, "store_enabled", "1") != "1":
+        return False
     if now is None:
         local_now = datetime.now(TIMEZONE)
     elif now.tzinfo is None:
@@ -129,6 +155,224 @@ def row_dict(row):
     return dict(row) if row is not None else None
 
 
+def decode_image_data(value):
+    if not isinstance(value, str) or len(value) > MAX_IMAGE_BYTES * 4 // 3 + 128:
+        fail("حجم الصورة أكبر من الحد المسموح.")
+    match = re.fullmatch(r"data:image/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})", value)
+    if not match:
+        fail("صيغة الصورة غير مدعومة. استخدموا PNG أو JPEG.")
+    try:
+        content = base64.b64decode(match.group(2), validate=True)
+    except (ValueError, binascii.Error):
+        fail("بيانات الصورة غير صحيحة.")
+    if len(content) > MAX_IMAGE_BYTES:
+        fail("حجم الصورة يجب ألا يتجاوز 600 كيلوبايت.")
+    mime_type = f"image/{match.group(1)}"
+    if (mime_type == "image/png" and not content.startswith(b"\x89PNG\r\n\x1a\n")) or (
+        mime_type == "image/jpeg" and not content.startswith(b"\xff\xd8\xff")
+    ):
+        fail("محتوى الصورة لا يطابق نوع الملف.")
+    try:
+        with PILImage.open(io.BytesIO(content)) as image:
+            expected_format = "PNG" if mime_type == "image/png" else "JPEG"
+            if image.format != expected_format or image.width * image.height > 30_000_000:
+                fail("أبعاد الصورة أو نوعها غير مدعوم.")
+            image.verify()
+    except (OSError, ValueError, PILImage.DecompressionBombError):
+        fail("ملف الصورة تالف أو غير مدعوم.")
+    return content, mime_type
+
+
+def _rtl(text):
+    return get_display(arabic_reshaper.reshape(str(text)))
+
+
+def _receipt_paragraph(text, style):
+    return Paragraph(escape(_rtl(text)), style)
+
+
+def build_receipt_pdf(order, items, receipt_number, business_name, phone, address, footer, logo=None):
+    buffer = io.BytesIO()
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=A5,
+        rightMargin=12 * mm,
+        leftMargin=12 * mm,
+        topMargin=10 * mm,
+        bottomMargin=12 * mm,
+        title=f"VENITO {receipt_number}",
+        author=business_name,
+    )
+    styles = {
+        "logo": ParagraphStyle(
+            "receiptLogo", fontName=RECEIPT_FONT, fontSize=25, leading=28,
+            alignment=TA_CENTER, textColor=colors.HexColor("#9a6947"),
+        ),
+        "title": ParagraphStyle(
+            "receiptTitle", fontName=RECEIPT_FONT, fontSize=14, leading=19,
+            alignment=TA_CENTER, textColor=colors.HexColor("#4a281f"),
+        ),
+        "center": ParagraphStyle(
+            "receiptCenter", fontName=RECEIPT_FONT, fontSize=8, leading=12,
+            alignment=TA_CENTER, textColor=colors.HexColor("#66574b"),
+        ),
+        "body": ParagraphStyle(
+            "receiptBody", fontName=RECEIPT_FONT, fontSize=8, leading=12,
+            alignment=TA_RIGHT, textColor=colors.HexColor("#35241f"),
+        ),
+        "small": ParagraphStyle(
+            "receiptSmall", fontName=RECEIPT_FONT, fontSize=7, leading=10,
+            alignment=TA_RIGHT, textColor=colors.HexColor("#75675b"),
+        ),
+        "table": ParagraphStyle(
+            "receiptTable", fontName=RECEIPT_FONT, fontSize=7, leading=10,
+            alignment=TA_RIGHT, textColor=colors.HexColor("#35241f"),
+        ),
+        "tableCenter": ParagraphStyle(
+            "receiptTableCenter", fontName=RECEIPT_FONT, fontSize=7, leading=10,
+            alignment=TA_CENTER, textColor=colors.HexColor("#35241f"),
+        ),
+    }
+
+    story = []
+    if logo:
+        image_reader = ImageReader(io.BytesIO(logo))
+        image_width, image_height = image_reader.getSize()
+        scale = min(23 * mm / image_width, 23 * mm / image_height)
+        story.append(Image(
+            io.BytesIO(logo), width=image_width * scale, height=image_height * scale,
+            hAlign="CENTER",
+        ))
+    else:
+        story.append(_receipt_paragraph("V", styles["logo"]))
+    story.extend([
+        _receipt_paragraph(business_name, styles["title"]),
+        _receipt_paragraph(phone, styles["center"]) if phone else Spacer(1, 1),
+        _receipt_paragraph(address, styles["center"]) if address else Spacer(1, 1),
+        Spacer(1, 4 * mm),
+    ])
+
+    created = datetime.fromisoformat(order["created_at"])
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    created_text = created.astimezone(TIMEZONE).strftime("%Y-%m-%d %H:%M")
+    details = [
+        [_receipt_paragraph(f"رقم الإيصال: {receipt_number}", styles["body"])],
+        [_receipt_paragraph(f"رقم الطلب: {order['order_number']}", styles["body"])],
+        [_receipt_paragraph(f"التاريخ والوقت: {created_text}", styles["body"])],
+        [_receipt_paragraph(f"العميل: {order['full_name']}", styles["body"])],
+        [_receipt_paragraph(f"الهاتف: {order['phone']}", styles["body"])],
+        [_receipt_paragraph(
+            f"منطقة التوصيل: {order['delivery_area_name']} — {order['delivery_address']}",
+            styles["body"],
+        )],
+    ]
+    story.append(Table(details, colWidths=[document.width], hAlign="RIGHT", style=TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+    ])))
+    story.append(Spacer(1, 4 * mm))
+
+    item_rows = [[
+        _receipt_paragraph("المنتج", styles["table"]),
+        _receipt_paragraph("الكمية", styles["tableCenter"]),
+        _receipt_paragraph("سعر القطعة", styles["tableCenter"]),
+        _receipt_paragraph("الإجمالي", styles["tableCenter"]),
+    ]]
+    for item in items:
+        name = f"{item['product_name_ar']} {item['variant_name_ar']}".strip()
+        item_rows.append([
+            _receipt_paragraph(name, styles["table"]),
+            _receipt_paragraph(item["quantity"], styles["tableCenter"]),
+            _receipt_paragraph(f"{item['unit_price_iqd']:,} د.ع", styles["tableCenter"]),
+            _receipt_paragraph(f"{item['line_total_iqd']:,} د.ع", styles["tableCenter"]),
+        ])
+    item_table = Table(item_rows, colWidths=[
+        document.width - 57 * mm, 13 * mm, 22 * mm, 22 * mm,
+    ], repeatRows=1, hAlign="RIGHT")
+    item_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#efe5d8")),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#e2d7ca")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(item_table)
+    story.append(Spacer(1, 4 * mm))
+
+    delivery = f"{order['delivery_fee_iqd']:,} د.ع" if order["delivery_fee_determined"] else "يحدد لاحقاً"
+    total = f"{order['total_iqd']:,} د.ع" if order["delivery_fee_determined"] else "يحدد لاحقاً"
+    totals = [
+        [_receipt_paragraph("المجموع الفرعي", styles["body"]),
+         _receipt_paragraph(f"{order['subtotal_iqd']:,} د.ع", styles["body"])],
+        [_receipt_paragraph("أجرة التوصيل", styles["body"]),
+         _receipt_paragraph(delivery, styles["body"])],
+        [_receipt_paragraph("الإجمالي النهائي", styles["title"]),
+         _receipt_paragraph(total, styles["title"])],
+        [_receipt_paragraph(
+            f"طريقة الدفع: {'نقداً عند الاستلام' if order['payment_method'] == 'cash_on_delivery' else 'إلكتروني'}",
+            styles["small"],
+        )],
+    ]
+    totals_table = Table(totals, colWidths=[document.width * 0.55, document.width * 0.45], hAlign="RIGHT")
+    totals_table.setStyle(TableStyle([
+        ("SPAN", (0, 3), (1, 3)),
+        ("LINEABOVE", (0, 2), (-1, 2), 0.7, colors.HexColor("#b28a66")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    story.append(totals_table)
+    if order["delivery_instructions"]:
+        story.extend([
+            Spacer(1, 2 * mm),
+            _receipt_paragraph(f"ملاحظات التوصيل: {order['delivery_instructions']}", styles["small"]),
+        ])
+    if footer:
+        story.extend([Spacer(1, 5 * mm), _receipt_paragraph(footer, styles["center"])])
+    document.build(story)
+    return buffer.getvalue()
+
+
+def send_admin_otp_email(code):
+    host = os.environ.get("SMTP_HOST", "").strip()
+    username = os.environ.get("SMTP_USERNAME", "").strip()
+    password = os.environ.get("SMTP_PASSWORD", "")
+    sender = os.environ.get("SMTP_FROM", "").strip()
+    try:
+        port = int(os.environ.get("SMTP_PORT", "587"))
+    except ValueError:
+        raise RuntimeError("إعداد منفذ البريد الإلكتروني غير صحيح.") from None
+    if (
+        not ADMIN_OTP_EMAIL or not host or not username or not password
+        or not sender or not 1 <= port <= 65535
+    ):
+        raise RuntimeError("إرسال رمز الدخول غير مهيأ. يرجى ضبط إعدادات SMTP على الخادم.")
+
+    message = EmailMessage()
+    message["Subject"] = "رمز تسجيل الدخول إلى لوحة VENTO"
+    message["From"] = sender
+    message["To"] = ADMIN_OTP_EMAIL
+    message.set_content(
+        f"رمز التحقق لتسجيل الدخول إلى لوحة إدارة VENTO هو: {code}\n"
+        "صلاحية الرمز خمس دقائق. إذا لم تطلب تسجيل الدخول فتجاهل هذه الرسالة."
+    )
+    try:
+        with smtplib.SMTP(host, port, timeout=10) as smtp:
+            smtp.ehlo()
+            smtp.starttls(context=ssl.create_default_context())
+            smtp.ehlo()
+            smtp.login(username, password)
+            smtp.send_message(message)
+    except (OSError, smtplib.SMTPException) as error:
+        print(f"Admin OTP email delivery failed: {type(error).__name__}")
+        raise RuntimeError("تعذر إرسال رمز التحقق إلى بريد الإدارة.") from error
+
+
 def order_dict(row):
     result = row_dict(row)
     if result and not result.get("delivery_fee_determined", 1):
@@ -141,7 +385,10 @@ class VenitoHandler(BaseHTTPRequestHandler):
     server_version = "VENITO/1.0"
 
     def log_message(self, format_string, *args):
-        print("%s - %s" % (self.address_string(), format_string % args))
+        message = format_string % args
+        if urlparse(self.path).path.startswith("/receipt/"):
+            message = message.replace(self.path, "/receipt/[redacted].pdf")
+        print("%s - %s" % (self.address_string(), message))
 
     def _send(self, status, body, content_type="application/json; charset=utf-8", headers=None):
         if isinstance(body, (dict, list)):
@@ -163,7 +410,9 @@ class VenitoHandler(BaseHTTPRequestHandler):
             "base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
         )
         for key, value in (headers or {}).items():
-            self.send_header(key, value)
+            values = value if isinstance(value, (list, tuple)) else (value,)
+            for header_value in values:
+                self.send_header(key, header_value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -256,6 +505,8 @@ class VenitoHandler(BaseHTTPRequestHandler):
         method = self.command
         if path == "/api/health" and method == "GET":
             return self._json(200, {"ok": True})
+        if path.startswith("/receipt/") and method == "GET":
+            return self._public_receipt(path)
         if not path.startswith("/api/"):
             return self._static(path)
         if method in ("POST", "PUT", "DELETE"):
@@ -269,12 +520,18 @@ class VenitoHandler(BaseHTTPRequestHandler):
             return self._products(query)
         if path == "/api/areas" and method == "GET":
             return self._areas()
+        if path == "/api/business-logo" and method == "GET":
+            return self._business_logo()
+        if path.startswith("/api/product-images/") and method == "GET":
+            return self._product_image(path.removeprefix("/api/product-images/"))
         if path == "/api/cart":
             return self._cart_api(method)
         if path == "/api/orders" and method == "POST":
             return self._create_order()
         if path == "/api/admin/login" and method == "POST":
             return self._login()
+        if path == "/api/admin/verify-otp" and method == "POST":
+            return self._verify_admin_otp()
         if path == "/api/admin/session" and method == "GET":
             return self._admin_session()
         if path == "/api/admin/logout" and method == "POST":
@@ -303,6 +560,51 @@ class VenitoHandler(BaseHTTPRequestHandler):
         }.get(requested.suffix, "application/octet-stream")
         self._send(200, requested.read_bytes(), mime)
 
+    def _public_receipt(self, path):
+        token = path.removeprefix("/receipt/").removesuffix(".pdf")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
+            fail("الإيصال غير موجود.", 404)
+        with database.connect() as db:
+            receipt = db.execute(
+                "SELECT receipt_number,pdf_data FROM receipts WHERE token_hash=?",
+                (hashlib.sha256(token.encode()).hexdigest(),),
+            ).fetchone()
+        if not receipt:
+            fail("الإيصال غير موجود.", 404)
+        return self._send(200, receipt["pdf_data"], "application/pdf", {
+            "Content-Disposition": f'attachment; filename="receipt-{receipt["receipt_number"]}.pdf"',
+            "Cache-Control": "private, no-store",
+            "Referrer-Policy": "no-referrer",
+            "X-Robots-Tag": "noindex, nofollow",
+        })
+
+    def _business_logo(self):
+        with database.connect() as db:
+            asset = db.execute(
+                "SELECT content,mime_type FROM business_assets WHERE asset_key='logo'"
+            ).fetchone()
+        if not asset:
+            fail("شعار المتجر غير موجود.", 404)
+        return self._send(200, asset["content"], asset["mime_type"], {
+            "Cache-Control": "no-cache",
+        })
+
+    def _product_image(self, image_id_value):
+        image_id = safe_int(image_id_value, "الصورة", 1)
+        with database.connect() as db:
+            image = db.execute(
+                "SELECT i.image_data,i.image_mime_type FROM product_images i "
+                "JOIN products p ON p.id=i.product_id "
+                "JOIN product_categories c ON c.id=p.category_id "
+                "WHERE i.id=? AND p.available=1 AND c.active=1",
+                (image_id,),
+            ).fetchone()
+        if not image or not image["image_data"]:
+            fail("الصورة غير موجودة.", 404)
+        return self._send(200, image["image_data"], image["image_mime_type"], {
+            "Cache-Control": "public, max-age=86400",
+        })
+
     def _public_store(self):
         with database.connect() as db:
             settings = {
@@ -310,7 +612,7 @@ class VenitoHandler(BaseHTTPRequestHandler):
                 for row in db.execute(
                     "SELECT key,value FROM business_settings WHERE key IN "
                     "('business_name','business_name_ar','phone','address','instagram_url','facebook_url',"
-                    "'payment_cash_enabled')"
+                    "'payment_cash_enabled','delivery_enabled','store_enabled')"
                 )
             }
             hours = [row_dict(r) for r in db.execute(
@@ -388,10 +690,12 @@ class VenitoHandler(BaseHTTPRequestHandler):
 
     def _areas(self):
         with database.connect() as db:
-            rows = [row_dict(r) for r in db.execute(
-                "SELECT id,name_ar,district,fee_iqd FROM delivery_areas "
-                "WHERE active=1 ORDER BY district,name_ar"
-            )]
+            rows = []
+            if get_setting(db, "delivery_enabled", "1") == "1":
+                rows = [row_dict(r) for r in db.execute(
+                    "SELECT id,name_ar,district,fee_iqd FROM delivery_areas "
+                    "WHERE active=1 ORDER BY district,name_ar"
+                )]
         return self._json(200, rows)
 
     def _cart_api(self, method):
@@ -472,6 +776,8 @@ class VenitoHandler(BaseHTTPRequestHandler):
         with database.connect() as db:
             if not store_status(db):
                 fail("المتجر مغلق الآن، ولا يمكن تأكيد الطلب خارج أوقات العمل.", 409)
+            if get_setting(db, "delivery_enabled", "1") != "1":
+                fail("التوصيل غير متاح حالياً.", 409)
             if payment_method == "electronic":
                 if get_setting(db, "payment_electronic_enabled") != "1":
                     fail("الدفع الإلكتروني غير متاح حالياً. اختر الدفع النقدي عند الاستلام.", 409)
@@ -556,12 +862,15 @@ class VenitoHandler(BaseHTTPRequestHandler):
                 (order_id, order_number, now),
             )
             db.execute("DELETE FROM cart_items WHERE cart_id=?", (cart_id,))
+            receipt_number, receipt_token, _ = self._build_order_receipt(db, order_id)
         return self._json(201, {
             "orderNumber": order_number, "status": "new",
             "subtotal": subtotal, "deliveryFee": area["fee_iqd"],
             "total": subtotal + area["fee_iqd"] if area["fee_iqd"] is not None else None,
             "deliveryFeeDetermined": area["fee_iqd"] is not None,
             "paymentStatus": "pending",
+            "receiptNumber": receipt_number,
+            "receiptUrl": f"/receipt/{receipt_token}.pdf",
         })
 
     def _login(self):
@@ -576,6 +885,11 @@ class VenitoHandler(BaseHTTPRequestHandler):
         attempts, blocked_until = LOGIN_ATTEMPTS.get(address, (0, 0))
         if blocked_until > now:
             fail("محاولات كثيرة. يرجى الانتظار قليلاً ثم المحاولة.", 429)
+        send_attempts, window_start = OTP_SEND_ATTEMPTS.get(address, (0, now))
+        if now - window_start >= 600:
+            send_attempts, window_start = 0, now
+        if send_attempts >= 3:
+            fail("تم تجاوز عدد رموز التحقق المسموح. حاول بعد عشر دقائق.", 429)
         with database.connect() as db:
             user = db.execute(
                 "SELECT id,password_hash,role,active FROM staff_users WHERE username=?",
@@ -596,18 +910,108 @@ class VenitoHandler(BaseHTTPRequestHandler):
                 LOGIN_ATTEMPTS[address] = (attempts, now + 300 if attempts >= 5 else 0)
                 fail("اسم المستخدم أو كلمة المرور غير صحيحة.", 401)
             LOGIN_ATTEMPTS.pop(address, None)
-            token = secrets.token_urlsafe(32)
-            csrf = secrets.token_urlsafe(32)
+            challenge = secrets.token_urlsafe(32)
+            code = f"{secrets.randbelow(1_000_000):06d}"
+            salt = secrets.token_bytes(16)
             created = datetime.now(timezone.utc)
             db.execute(
-                "INSERT INTO admin_sessions (token_hash,staff_user_id,csrf_token,expires_at,created_at) "
-                "VALUES (?,?,?,?,?)",
-                (hashlib.sha256(token.encode()).hexdigest(), user["id"], csrf,
-                 (created + timedelta(hours=12)).isoformat(timespec="seconds"),
+                "DELETE FROM admin_otp_challenges WHERE staff_user_id=?", (user["id"],)
+            )
+            db.execute(
+                "INSERT INTO admin_otp_challenges "
+                "(challenge_hash,staff_user_id,otp_hash,otp_salt,expires_at,created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (hashlib.sha256(challenge.encode()).hexdigest(), user["id"],
+                 hashlib.scrypt(code.encode(), salt=salt, n=2**14, r=8, p=1).hex(),
+                 salt.hex(), (created + timedelta(minutes=5)).isoformat(timespec="seconds"),
                  created.isoformat(timespec="seconds")),
             )
-        headers = {"Set-Cookie": self._set_cookie("venito_admin", token, 60 * 60 * 12, same_site="Strict")}
-        return self._json(200, {"user": {"username": username, "role": user["role"]}, "csrfToken": csrf}, headers)
+        OTP_SEND_ATTEMPTS[address] = (send_attempts + 1, window_start)
+        try:
+            send_admin_otp_email(code)
+        except RuntimeError as error:
+            with database.connect() as db:
+                db.execute(
+                    "DELETE FROM admin_otp_challenges WHERE challenge_hash=?",
+                    (hashlib.sha256(challenge.encode()).hexdigest(),),
+                )
+            fail(str(error), 503)
+        return self._json(202, {
+            "otpRequired": True,
+            "message": "أُرسل رمز التحقق إلى بريد الإدارة.",
+        }, {"Set-Cookie": self._set_cookie(
+            "venito_admin_challenge", challenge, 300, same_site="Strict"
+        )})
+
+    def _verify_admin_otp(self):
+        challenge = self._cookie("venito_admin_challenge")
+        if not challenge:
+            fail("انتهت صلاحية طلب التحقق. سجّل الدخول مجدداً.", 401)
+        code = self._body().get("otp", "")
+        if not isinstance(code, str) or not re.fullmatch(r"[0-9]{6}", code):
+            fail("أدخل رمز التحقق المكوّن من ستة أرقام.")
+        challenge_hash = hashlib.sha256(challenge.encode()).hexdigest()
+        with database.connect() as db:
+            row = db.execute(
+                "SELECT * FROM admin_otp_challenges WHERE challenge_hash=?",
+                (challenge_hash,),
+            ).fetchone()
+            if not row:
+                fail("رمز التحقق غير صالح أو انتهت صلاحيته. سجّل الدخول مجدداً.", 401)
+            now = datetime.now(timezone.utc)
+            if datetime.fromisoformat(row["expires_at"]) <= now:
+                db.execute("DELETE FROM admin_otp_challenges WHERE challenge_hash=?", (challenge_hash,))
+                expired = True
+                valid = False
+            else:
+                expired = False
+                candidate = hashlib.scrypt(
+                    code.encode(), salt=bytes.fromhex(row["otp_salt"]), n=2**14, r=8, p=1
+                ).hex()
+                valid = hmac.compare_digest(candidate, row["otp_hash"])
+                if not valid:
+                    attempts = row["attempts"] + 1
+                    if attempts >= 5:
+                        db.execute(
+                            "DELETE FROM admin_otp_challenges WHERE challenge_hash=?",
+                            (challenge_hash,),
+                        )
+                    else:
+                        db.execute(
+                            "UPDATE admin_otp_challenges SET attempts=? WHERE challenge_hash=?",
+                            (attempts, challenge_hash),
+                        )
+            if valid:
+                user = db.execute(
+                    "SELECT id,username,role,active FROM staff_users WHERE id=?",
+                    (row["staff_user_id"],),
+                ).fetchone()
+                db.execute("DELETE FROM admin_otp_challenges WHERE challenge_hash=?", (challenge_hash,))
+                if user and user["active"]:
+                    token = secrets.token_urlsafe(32)
+                    csrf = secrets.token_urlsafe(32)
+                    created = now
+                    db.execute(
+                        "INSERT INTO admin_sessions (token_hash,staff_user_id,csrf_token,expires_at,created_at) "
+                        "VALUES (?,?,?,?,?)",
+                        (hashlib.sha256(token.encode()).hexdigest(), user["id"], csrf,
+                         (created + timedelta(hours=12)).isoformat(timespec="seconds"),
+                         created.isoformat(timespec="seconds")),
+                    )
+        if expired:
+            fail("انتهت صلاحية رمز التحقق. سجّل الدخول مجدداً.", 401)
+        if not valid:
+            fail("رمز التحقق غير صحيح.", 401)
+        if not user or not user["active"]:
+            fail("حساب الإدارة غير فعال.", 401)
+        headers = {"Set-Cookie": [
+            self._set_cookie("venito_admin", token, 60 * 60 * 12, same_site="Strict"),
+            self._set_cookie("venito_admin_challenge", "", 0, same_site="Strict"),
+        ]}
+        return self._json(200, {
+            "user": {"username": user["username"], "role": user["role"]},
+            "csrfToken": csrf,
+        }, headers)
 
     def _admin_session(self):
         user = self._admin()
@@ -649,6 +1053,8 @@ class VenitoHandler(BaseHTTPRequestHandler):
         if resource == "areas":
             return self._admin_areas(method, segments[1:] if len(segments) > 1 else [])
         if resource == "orders":
+            if len(segments) == 3 and segments[2] == "receipt" and method == "GET":
+                return self._admin_receipt(segments[1])
             if len(segments) == 3 and segments[2] == "print" and method == "POST":
                 return self._print_order(segments[1], self._body())
             return self._admin_orders(method, segments[1:] if len(segments) > 1 else [], query, user["id"])
@@ -659,6 +1065,8 @@ class VenitoHandler(BaseHTTPRequestHandler):
             return self._printer_test()
         if resource == "settings":
             return self._admin_settings(method)
+        if resource == "logo":
+            return self._admin_logo(method)
         if resource == "reports" and method == "GET":
             return self._admin_reports(query)
         if resource == "banners":
@@ -667,23 +1075,113 @@ class VenitoHandler(BaseHTTPRequestHandler):
             return self._admin_staff(method, segments[1:] if len(segments) > 1 else [], user)
         fail("المسار الإداري غير موجود.", 404)
 
+    def _build_order_receipt(self, db, order_id):
+        order = db.execute(
+            "SELECT o.*,c.full_name,c.phone FROM orders o "
+            "JOIN customers c ON c.id=o.customer_id WHERE o.id=?",
+            (order_id,),
+        ).fetchone()
+        if not order:
+            fail("الطلب غير موجود.", 404)
+        items = db.execute(
+            "SELECT * FROM order_items WHERE order_id=? ORDER BY id", (order_id,)
+        ).fetchall()
+        logo = db.execute(
+            "SELECT content FROM business_assets WHERE asset_key='logo'"
+        ).fetchone()
+        receipt_number = (
+            "VR-" + datetime.now(TIMEZONE).strftime("%y%m%d") + "-"
+            + secrets.token_hex(8).upper()
+        )
+        token = secrets.token_urlsafe(32)
+        pdf_data = build_receipt_pdf(
+            order,
+            items,
+            receipt_number,
+            get_setting(db, "business_name_ar", "حلويات ومعجنات فينيتو"),
+            get_setting(db, "phone"),
+            get_setting(db, "address"),
+            get_setting(db, "receipt_footer"),
+            logo["content"] if logo else None,
+        )
+        db.execute(
+            "INSERT INTO receipts (order_id,receipt_number,token_hash,pdf_data,created_at) "
+            "VALUES (?,?,?,?,?)",
+            (
+                order_id, receipt_number, hashlib.sha256(token.encode()).hexdigest(),
+                pdf_data, database.utc_now(),
+            ),
+        )
+        return receipt_number, token, pdf_data
+
+    def _admin_receipt(self, order_id_value):
+        order_id = safe_int(order_id_value, "الطلب", 1)
+        with database.connect() as db:
+            receipt = db.execute(
+                "SELECT receipt_number,pdf_data FROM receipts WHERE order_id=?",
+                (order_id,),
+            ).fetchone()
+            if not receipt:
+                receipt_number, _, pdf_data = self._build_order_receipt(db, order_id)
+            else:
+                receipt_number, pdf_data = receipt["receipt_number"], receipt["pdf_data"]
+        return self._send(200, pdf_data, "application/pdf", {
+            "Content-Disposition": f'inline; filename="receipt-{receipt_number}.pdf"',
+            "Cache-Control": "private, no-store",
+            "X-Robots-Tag": "noindex, nofollow",
+        })
+
+    def _admin_logo(self, method):
+        with database.connect() as db:
+            if method == "PUT":
+                content, mime_type = decode_image_data(self._body().get("imageData"))
+                db.execute(
+                    "INSERT INTO business_assets (asset_key,content,mime_type,updated_at) "
+                    "VALUES ('logo',?,?,?) ON CONFLICT(asset_key) DO UPDATE SET "
+                    "content=excluded.content,mime_type=excluded.mime_type,updated_at=excluded.updated_at",
+                    (content, mime_type, database.utc_now()),
+                )
+                db.commit()
+                return self._json(200, {"ok": True})
+            if method == "DELETE":
+                db.execute("DELETE FROM business_assets WHERE asset_key='logo'")
+                db.commit()
+                return self._json(200, {"ok": True})
+        fail("الطريقة غير مدعومة.", 405)
+
     def _admin_summary(self):
         with database.connect() as db:
-            today = datetime.now(TIMEZONE).date().isoformat()
-            counts = {
-                row["status"]: row["count"] for row in db.execute(
-                    "SELECT status,COUNT(*) AS count FROM orders "
-                    "WHERE date(created_at,'+3 hours')=? GROUP BY status",
-                    (today,),
-                )
-            }
-            totals = db.execute(
-                "SELECT COUNT(*) AS order_count,COALESCE(SUM(CASE WHEN status!='cancelled' "
-                "THEN CASE WHEN delivery_fee_determined=1 THEN total_iqd ELSE subtotal_iqd END "
-                "ELSE 0 END),0) AS sales FROM orders "
+            local_today = datetime.now(TIMEZONE).date()
+            today = local_today.isoformat()
+            month_start = local_today.replace(day=1).isoformat()
+            counts = {row["status"]: row["count"] for row in db.execute(
+                "SELECT status,COUNT(*) AS count FROM orders GROUP BY status"
+            )}
+            sales_expression = "CASE WHEN status!='cancelled' THEN subtotal_iqd ELSE 0 END"
+            daily_sales = db.execute(
+                f"SELECT COALESCE(SUM({sales_expression}),0) FROM orders "
                 "WHERE date(created_at,'+3 hours')=?",
                 (today,),
-            ).fetchone()
+            ).fetchone()[0]
+            monthly_sales = db.execute(
+                f"SELECT COALESCE(SUM({sales_expression}),0) FROM orders "
+                "WHERE date(created_at,'+3 hours')>=? AND date(created_at,'+3 hours')<=?",
+                (month_start, today),
+            ).fetchone()[0]
+            chart_start = (local_today - timedelta(days=13)).isoformat()
+            chart_values = {
+                row["day"]: row["sales"] for row in db.execute(
+                    f"SELECT date(created_at,'+3 hours') AS day,SUM({sales_expression}) AS sales "
+                    "FROM orders WHERE date(created_at,'+3 hours')>=? "
+                    "AND date(created_at,'+3 hours')<=? GROUP BY day",
+                    (chart_start, today),
+                )
+            }
+            sales_chart = [
+                {"day": (local_today - timedelta(days=offset)).isoformat(),
+                 "sales": chart_values.get((local_today - timedelta(days=offset)).isoformat(), 0)}
+                for offset in range(13, -1, -1)
+            ]
             recent = [order_dict(r) for r in db.execute(
                 "SELECT o.order_number,o.status,o.total_iqd,o.delivery_fee_determined,o.created_at,c.full_name "
                 " ,o.id "
@@ -691,9 +1189,26 @@ class VenitoHandler(BaseHTTPRequestHandler):
                 "ORDER BY o.id DESC LIMIT 8"
             )]
             products = db.execute("SELECT COUNT(*) AS n FROM products").fetchone()["n"]
+            total_orders = sum(counts.values())
+            today_orders = db.execute(
+                "SELECT COUNT(*) FROM orders WHERE date(created_at,'+3 hours')=?",
+                (today,),
+            ).fetchone()[0]
+        pending = counts.get("new", 0) + counts.get("confirmed", 0)
         return self._json(200, {
-            "todayOrders": totals["order_count"], "todaySales": totals["sales"],
-            "products": products, "statuses": counts, "recentOrders": recent,
+            "todayOrders": today_orders,
+            "todaySales": daily_sales,
+            "monthlySales": monthly_sales,
+            "totalOrders": total_orders,
+            "newOrders": counts.get("new", 0),
+            "pendingOrders": pending,
+            "preparingOrders": counts.get("preparing", 0),
+            "completedOrders": counts.get("delivered", 0),
+            "cancelledOrders": counts.get("cancelled", 0),
+            "products": products,
+            "statuses": counts,
+            "salesChart": sales_chart,
+            "recentOrders": recent,
         })
 
     def _admin_products(self, method, ids):
@@ -758,6 +1273,9 @@ class VenitoHandler(BaseHTTPRequestHandler):
             (url.startswith("/") and not url.startswith("//")) or url.startswith("https://")
             ):
                 fail("رابط إحدى الصور غير آمن أو غير صحيح.")
+        image_data = None
+        if data.get("imageData"):
+            image_data = decode_image_data(data["imageData"])
         variants = data.get("variants", [])
         if not isinstance(variants, list) or len(variants) > 30:
             fail("خيارات المنتج غير صحيحة.")
@@ -791,11 +1309,24 @@ class VenitoHandler(BaseHTTPRequestHandler):
                 (*fields[:-1], now, now),
             )
             product_id = cursor.lastrowid
-        db.execute("DELETE FROM product_images WHERE product_id=?", (product_id,))
-        db.executemany(
-            "INSERT INTO product_images (product_id,image_url,alt_ar,sort_order) VALUES (?,?,?,?)",
-            ((product_id, url, name, index) for index, url in enumerate(image_urls)),
-        )
+        if "images" in data or image_data:
+            db.execute("DELETE FROM product_images WHERE product_id=?", (product_id,))
+            db.executemany(
+                "INSERT INTO product_images (product_id,image_url,alt_ar,sort_order) VALUES (?,?,?,?)",
+                ((product_id, url, name, index) for index, url in enumerate(image_urls)),
+            )
+            if image_data:
+                content, mime_type = image_data
+                cursor = db.execute(
+                    "INSERT INTO product_images "
+                    "(product_id,image_url,alt_ar,sort_order,image_data,image_mime_type) "
+                    "VALUES (?,'',?,?,?,?)",
+                    (product_id, name, len(image_urls), content, mime_type),
+                )
+                db.execute(
+                    "UPDATE product_images SET image_url=? WHERE id=?",
+                    (f"/api/product-images/{cursor.lastrowid}", cursor.lastrowid),
+                )
         db.execute("DELETE FROM product_variants WHERE product_id=?", (product_id,))
         db.executemany(
             "INSERT INTO product_variants (product_id,name_ar,price_iqd,available) VALUES (?,?,?,?)",
@@ -904,12 +1435,39 @@ class VenitoHandler(BaseHTTPRequestHandler):
                 clauses, params = [], []
                 status = query.get("status", [""])[0]
                 search = query.get("q", [""])[0].strip()[:100]
-                if status in STATUSES:
+                if status and status not in STATUSES and status != "pending":
+                    fail("حالة الطلب غير معروفة.")
+                if status == "pending":
+                    clauses.append("o.status IN ('new','confirmed')")
+                elif status:
                     clauses.append("o.status=?")
                     params.append(status)
                 if search:
                     clauses.append("(o.order_number LIKE ? OR c.full_name LIKE ? OR c.phone LIKE ?)")
                     params.extend((f"%{search}%", f"%{search}%", f"%{search}%"))
+                date_from = query.get("dateFrom", [""])[0]
+                date_to = query.get("dateTo", [""])[0]
+                parsed_dates = {}
+                for key, value in (("dateFrom", date_from), ("dateTo", date_to)):
+                    if value:
+                        try:
+                            parsed_dates[key] = datetime.strptime(value, "%Y-%m-%d").date()
+                        except ValueError:
+                            fail("صيغة تاريخ الطلب غير صحيحة.")
+                        if parsed_dates[key].isoformat() != value:
+                            fail("صيغة تاريخ الطلب غير صحيحة.")
+                if date_from and date_to and parsed_dates["dateFrom"] > parsed_dates["dateTo"]:
+                    fail("تاريخ البداية يجب ألا يتجاوز تاريخ النهاية.")
+                if date_from:
+                    clauses.append("date(o.created_at,'+3 hours')>=?")
+                    params.append(date_from)
+                if date_to:
+                    clauses.append("date(o.created_at,'+3 hours')<=?")
+                    params.append(date_to)
+                area_id = query.get("areaId", [""])[0]
+                if area_id:
+                    clauses.append("o.delivery_area_id=?")
+                    params.append(safe_int(area_id, "منطقة التوصيل", 1))
                 where = " WHERE " + " AND ".join(clauses) if clauses else ""
                 rows = db.execute(
                     "SELECT o.*,c.full_name,c.phone FROM orders o JOIN customers c ON c.id=o.customer_id"
@@ -938,6 +1496,10 @@ class VenitoHandler(BaseHTTPRequestHandler):
                     "SELECT status,created_at FROM order_status_history WHERE order_id=? ORDER BY id",
                     (order_id,),
                 )]
+                receipt = db.execute(
+                    "SELECT receipt_number FROM receipts WHERE order_id=?", (order_id,)
+                ).fetchone()
+                result["receipt_number"] = receipt["receipt_number"] if receipt else None
                 return self._json(200, result)
             if len(ids) == 1 and method == "PUT":
                 data = self._body()
@@ -991,7 +1553,12 @@ class VenitoHandler(BaseHTTPRequestHandler):
                 hours = [row_dict(r) for r in db.execute(
                     "SELECT weekday,opens_at,closes_at,active FROM working_hours ORDER BY weekday"
                 )]
-                return self._json(200, {"settings": settings, "hours": hours})
+                logo_available = bool(db.execute(
+                    "SELECT 1 FROM business_assets WHERE asset_key='logo'"
+                ).fetchone())
+                return self._json(200, {
+                    "settings": settings, "hours": hours, "logoAvailable": logo_available,
+                })
             if method == "PUT":
                 data = self._body()
                 settings = data.get("settings", {})
@@ -1001,7 +1568,8 @@ class VenitoHandler(BaseHTTPRequestHandler):
                     "business_name", "business_name_ar", "phone", "address",
                     "instagram_url", "facebook_url", "payment_cash_enabled",
                     "payment_electronic_enabled", "printer_enabled", "printer_host",
-                    "printer_port", "printer_paper_width",
+                    "printer_port", "printer_paper_width", "store_enabled",
+                    "delivery_enabled", "receipt_footer",
                 }
                 for key, value in settings.items():
                     if key not in allowed or not isinstance(value, (str, int, bool)):
@@ -1017,7 +1585,9 @@ class VenitoHandler(BaseHTTPRequestHandler):
                         fail("عرض الورق يجب أن يكون 58 أو 80 مم.")
                     if key == "printer_host" and any(char in value for char in "/\\@"):
                         fail("أدخل اسم مضيف أو عنوان IP فقط للطابعة.")
-                    if key.startswith("payment_") or key in ("printer_enabled",):
+                    if key.startswith("payment_") or key in (
+                        "printer_enabled", "store_enabled", "delivery_enabled",
+                    ):
                         value = "1" if bool_value(value) else "0"
                     set_setting(db, key, value)
                 hours = data.get("hours")
@@ -1048,43 +1618,64 @@ class VenitoHandler(BaseHTTPRequestHandler):
 
     def _admin_reports(self, query):
         period = query.get("period", ["week"])[0]
-        days = {"day": 1, "week": 7, "month": 30}.get(period, 7)
+        periods = {"day": 1, "week": 7, "month": 30}
+        if period not in periods:
+            fail("فترة التقرير غير معروفة.")
         local_now = datetime.now(TIMEZONE)
-        local_start = datetime.combine(
-            local_now.date() - timedelta(days=days - 1),
-            datetime.min.time(),
-            tzinfo=TIMEZONE,
-        )
+        date_from = query.get("dateFrom", [""])[0]
+        date_to = query.get("dateTo", [""])[0]
+        if bool(date_from) != bool(date_to):
+            fail("أدخلوا تاريخ البداية والنهاية معاً.")
+        if date_from:
+            try:
+                start_date = datetime.strptime(date_from, "%Y-%m-%d").date()
+                end_date = datetime.strptime(date_to, "%Y-%m-%d").date()
+            except ValueError:
+                fail("صيغة تاريخ التقرير غير صحيحة.")
+            if start_date.isoformat() != date_from or end_date.isoformat() != date_to:
+                fail("صيغة تاريخ التقرير غير صحيحة.")
+            if start_date > end_date:
+                fail("تاريخ البداية يجب ألا يتجاوز تاريخ النهاية.")
+        else:
+            end_date = local_now.date()
+            start_date = end_date - timedelta(days=periods[period] - 1)
+            date_from = start_date.isoformat()
+            date_to = end_date.isoformat()
+        local_start = datetime.combine(start_date, datetime.min.time(), tzinfo=TIMEZONE)
+        local_end = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=TIMEZONE)
         since = local_start.astimezone(timezone.utc).isoformat(timespec="seconds")
+        until = local_end.astimezone(timezone.utc).isoformat(timespec="seconds")
         with database.connect() as db:
             daily = [row_dict(r) for r in db.execute(
                 "SELECT date(created_at,'+3 hours') AS day,COUNT(*) AS orders,"
-                "COALESCE(SUM(CASE WHEN status!='cancelled' THEN "
-                "CASE WHEN delivery_fee_determined=1 THEN total_iqd ELSE subtotal_iqd END "
-                "ELSE 0 END),0) AS sales "
-                "FROM orders WHERE created_at>=? GROUP BY date(created_at,'+3 hours') ORDER BY day DESC", (since,)
+                "COALESCE(SUM(CASE WHEN status!='cancelled' THEN subtotal_iqd ELSE 0 END),0) AS sales "
+                "FROM orders WHERE created_at>=? AND created_at<? "
+                "GROUP BY date(created_at,'+3 hours') ORDER BY day DESC", (since, until)
             )]
             best_sellers = [row_dict(r) for r in db.execute(
                 "SELECT product_name_ar,SUM(quantity) AS quantity,SUM(line_total_iqd) AS sales "
                 "FROM order_items i JOIN orders o ON o.id=i.order_id WHERE o.status!='cancelled' "
-                "AND o.created_at>=? GROUP BY product_name_ar ORDER BY quantity DESC LIMIT 10", (since,)
+                "AND o.created_at>=? AND o.created_at<? "
+                "GROUP BY product_name_ar ORDER BY quantity DESC LIMIT 10", (since, until)
             )]
             summary = row_dict(db.execute(
                 "SELECT COUNT(*) AS orders,"
                 "COALESCE(SUM(CASE WHEN status!='cancelled' THEN subtotal_iqd ELSE 0 END),0) AS sales,"
                 "COALESCE(SUM(CASE WHEN status!='cancelled' AND delivery_fee_determined=1 "
                 "THEN delivery_fee_iqd ELSE 0 END),0) AS delivery_fees,"
-                "SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS cancelled "
-                "FROM orders WHERE created_at>=?", (since,)
+                "COALESCE(SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END),0) AS cancelled,"
+                "COALESCE(SUM(CASE WHEN status='delivered' THEN 1 ELSE 0 END),0) AS completed "
+                "FROM orders WHERE created_at>=? AND created_at<?", (since, until)
             ).fetchone())
             payments = [row_dict(r) for r in db.execute(
                 "SELECT payment_method,COUNT(*) AS orders,"
-                "SUM(CASE WHEN payment_status='paid' THEN total_iqd ELSE 0 END) AS paid "
-                "FROM orders WHERE created_at>=? GROUP BY payment_method", (since,)
+                "COALESCE(SUM(CASE WHEN payment_status='paid' THEN total_iqd ELSE 0 END),0) AS paid "
+                "FROM orders WHERE created_at>=? AND created_at<? GROUP BY payment_method", (since, until)
             )]
         return self._json(200, {
             "period": period, "summary": summary, "daily": daily,
             "bestSellers": best_sellers, "payments": payments,
+            "dateFrom": date_from, "dateTo": date_to,
         })
 
     def _admin_banners(self, method, ids):

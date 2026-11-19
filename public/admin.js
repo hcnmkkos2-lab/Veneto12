@@ -12,6 +12,9 @@ const statusNames = {
 const dayNames = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"];
 let searchTimers = {};
 let toastTimer;
+let otpPending = false;
+let currentReportData = null;
+let currentReceiptUrl = "";
 
 async function request(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
@@ -37,6 +40,13 @@ function showToast(message) {
 
 function showLogin() {
   adminState.csrf = "";
+  otpPending = false;
+  const form = $$("#login-form");
+  form.reset();
+  form.elements.namedItem("password").disabled = false;
+  $$("#otp-step").classList.add("hidden");
+  $$("#otp-input").required = false;
+  form.querySelector("button[type=submit]").innerHTML = 'دخول إلى لوحة التحكم <span>←</span>';
   $$("#admin-app").classList.add("hidden");
   $$("#login-screen").classList.remove("hidden");
 }
@@ -50,7 +60,7 @@ function showApp(user, csrf) {
   $$("#sidebar-role").textContent = ({ admin: "مدير النظام", manager: "مدير", staff: "موظف" })[user.role] || user.role;
   document.querySelectorAll(".admin-only").forEach((item) => item.classList.toggle("hidden", user.role !== "admin"));
   if (user.role === "staff") {
-    document.querySelectorAll("[data-action]").forEach((item) => item.classList.add("hidden"));
+    document.querySelectorAll("[data-action]:not([data-staff-visible])").forEach((item) => item.classList.add("hidden"));
   }
   $$("#today-date").textContent = new Intl.DateTimeFormat("ar-IQ", {
     weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Baghdad",
@@ -73,6 +83,30 @@ function statusPill(status) {
 
 function emptyRow(columns, text = "لا توجد بيانات لعرضها حالياً.") {
   return `<tr><td class="empty-row" colspan="${columns}">${text}</td></tr>`;
+}
+
+function formatDateTime(value) {
+  return new Intl.DateTimeFormat("ar-IQ", {
+    dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Baghdad",
+  }).format(new Date(value));
+}
+
+function renderSalesChart(container, rows) {
+  if (!rows.length) {
+    container.innerHTML = '<p class="empty-row">لا توجد مبيعات ضمن الفترة المحددة.</p>';
+    return;
+  }
+  const maximum = Math.max(1, ...rows.map((row) => Number(row.sales) || 0));
+  container.innerHTML = rows.map((row) => {
+    const sales = Number(row.sales) || 0;
+    const height = Math.max(sales ? 5 : 0, sales / maximum * 100);
+    const day = new Intl.DateTimeFormat("ar-IQ", {
+      day: "numeric", month: "numeric", timeZone: "Asia/Baghdad",
+    }).format(new Date(`${row.day}T12:00:00+03:00`));
+    return `<div class="chart-column" title="${escapeHTML(row.day)} · ${escapeHTML(formatMoney(sales))}">
+      <strong>${escapeHTML(formatMoney(sales))}</strong><span class="chart-bar" style="height:${height}%"></span><small>${escapeHTML(day)}</small>
+    </div>`;
+  }).join("");
 }
 
 function navigate(view) {
@@ -105,15 +139,20 @@ function renderStats(container, items) {
 async function loadOverview() {
   const data = await request("/api/admin/summary");
   renderStats($$("#stats-grid"), [
-    { label: "طلبات اليوم", value: Number(data.todayOrders).toLocaleString("ar-IQ"), note: "طلبات مسجلة اليوم" },
-    { label: "مبيعات اليوم", value: formatMoney(data.todaySales), note: "لا تشمل الطلبات الملغاة" },
-    { label: "المنتجات", value: Number(data.products).toLocaleString("ar-IQ"), note: "جميع المنتجات المسجلة" },
-    { label: "طلبات جديدة", value: Number(data.statuses.new || 0).toLocaleString("ar-IQ"), note: "بانتظار المتابعة" },
+    { label: "إجمالي الطلبات", value: Number(data.totalOrders).toLocaleString("ar-IQ"), note: "كل الطلبات المسجلة" },
+    { label: "طلبات جديدة", value: Number(data.newOrders).toLocaleString("ar-IQ"), note: "تحتاج إلى مراجعة" },
+    { label: "طلبات بانتظار المتابعة", value: Number(data.pendingOrders).toLocaleString("ar-IQ"), note: "جديدة أو مؤكدة" },
+    { label: "قيد التحضير", value: Number(data.preparingOrders).toLocaleString("ar-IQ"), note: "طلبات يجري تجهيزها" },
+    { label: "طلبات مكتملة", value: Number(data.completedOrders).toLocaleString("ar-IQ"), note: "تم توصيلها" },
+    { label: "طلبات ملغاة", value: Number(data.cancelledOrders).toLocaleString("ar-IQ"), note: "كل الطلبات الملغاة" },
+    { label: "مبيعات اليوم", value: formatMoney(data.todaySales), note: "صافي المنتجات، دون رسوم التوصيل" },
+    { label: "مبيعات الشهر", value: formatMoney(data.monthlySales), note: "من بداية الشهر حتى اليوم" },
   ]);
+  renderSalesChart($$("#overview-sales-chart"), data.salesChart);
   $$("#recent-orders").innerHTML = data.recentOrders.length ? data.recentOrders.map((order) => `
     <tr><td><button class="inline-action" data-order="${escapeHTML(order.id || "")}" data-order-number="${escapeHTML(order.order_number)}">${escapeHTML(order.order_number)}</button></td>
     <td>${escapeHTML(order.full_name)}</td><td>${statusPill(order.status)}</td><td>${formatMoney(order.total_iqd)}</td>
-    <td>${escapeHTML(new Date(order.created_at).toLocaleString("ar-IQ"))}</td></tr>`).join("") : emptyRow(5);
+    <td>${escapeHTML(formatDateTime(order.created_at))}</td></tr>`).join("") : emptyRow(5);
 }
 
 async function loadProducts() {
@@ -126,7 +165,7 @@ async function loadProducts() {
     <tr><td><strong>${escapeHTML(product.name_ar)}</strong>${product.featured ? " · مميز" : ""}</td>
     <td>${escapeHTML(product.category_name)}</td><td>${product.price_iqd == null ? "غير محدد" : formatMoney(product.price_iqd)}</td>
     <td>${product.available ? '<span class="status-pill status-ready">متاح</span>' : '<span class="status-pill status-cancelled">غير متاح</span>'}</td>
-    <td><button class="inline-action" data-edit-product="${product.id}">تعديل</button><button class="inline-action" data-toggle-product="${product.id}">${product.available ? "إيقاف" : "تفعيل"}</button></td></tr>
+    <td><button class="inline-action" data-edit-product="${product.id}">تعديل</button><button class="inline-action" data-toggle-product="${product.id}">${product.available ? "إيقاف" : "تفعيل"}</button><button class="inline-action" data-delete-product="${product.id}">حذف</button></td></tr>
   `).join("") : emptyRow(5, "لم تُضف منتجات بعد. أضيفوا منتجاتكم وأسعارها من هنا.");
 }
 
@@ -151,15 +190,25 @@ async function loadAreas() {
 }
 
 async function loadOrders() {
+  if (!adminState.areas.length) adminState.areas = await request("/api/admin/areas");
+  const areaSelect = $$("#order-area");
+  const selectedArea = areaSelect.value;
+  areaSelect.innerHTML = '<option value="">كل مناطق التوصيل</option>' + adminState.areas.map((area) =>
+    `<option value="${area.id}">${escapeHTML(area.name_ar)}${area.active ? "" : " — غير فعالة"}</option>`
+  ).join("");
+  areaSelect.value = selectedArea;
   const params = new URLSearchParams();
   if ($$("#order-search").value.trim()) params.set("q", $$("#order-search").value.trim());
   if ($$("#order-status").value) params.set("status", $$("#order-status").value);
+  if ($$("#order-area").value) params.set("areaId", $$("#order-area").value);
+  if ($$("#order-date-from").value) params.set("dateFrom", $$("#order-date-from").value);
+  if ($$("#order-date-to").value) params.set("dateTo", $$("#order-date-to").value);
   adminState.orders = await request(`/api/admin/orders?${params}`);
   $$("#orders-table").innerHTML = adminState.orders.length ? adminState.orders.map((order) => `
     <tr><td><button class="inline-action" data-order="${order.id}">${escapeHTML(order.order_number)}</button></td>
     <td>${escapeHTML(order.full_name)}<br><small>${escapeHTML(order.phone)}</small></td>
     <td>${escapeHTML(order.delivery_area_name)}</td><td>${statusPill(order.status)}</td>
-    <td>${formatMoney(order.total_iqd)}</td><td>${escapeHTML(new Date(order.created_at).toLocaleString("ar-IQ"))}</td>
+    <td>${formatMoney(order.total_iqd)}</td><td>${escapeHTML(formatDateTime(order.created_at))}</td>
     <td><button class="inline-action" data-order="${order.id}">التفاصيل</button></td></tr>
   `).join("") : emptyRow(7, "لا توجد طلبات تطابق البحث.");
 }
@@ -173,21 +222,25 @@ async function openOrder(orderId) {
       <div class="order-detail-grid">
         <div><span>العميل</span><strong>${escapeHTML(order.full_name)}</strong></div>
         <div><span>رقم الهاتف</span><a href="tel:${escapeHTML(order.phone)}">${escapeHTML(order.phone)}</a></div>
+        <div><span>تاريخ ووقت الطلب</span><strong>${escapeHTML(formatDateTime(order.created_at))}</strong></div>
+        <div><span>رقم الإيصال</span><strong>${escapeHTML(order.receipt_number || "سيُنشأ عند تنزيل الإيصال")}</strong></div>
         <div><span>منطقة التوصيل</span><strong>${escapeHTML(order.delivery_area_name)} — ${order.delivery_district === "karkh" ? "الكرخ" : "الرصافة"}</strong></div>
         <div><span>أجرة التوصيل</span><strong>${formatMoney(order.delivery_fee_iqd)}</strong></div>
         <div><span>العنوان</span><strong>${escapeHTML(order.delivery_address)}</strong></div>
         <div><span>الدفع</span><strong>${order.payment_method === "cash_on_delivery" ? "نقداً عند الاستلام" : "إلكتروني"} · ${order.payment_status === "pending" ? "بانتظار الدفع" : escapeHTML(order.payment_status)}</strong></div>
         ${order.delivery_instructions ? `<div><span>ملاحظات</span><strong>${escapeHTML(order.delivery_instructions)}</strong></div>` : ""}
       </div>
-      <div>${order.items.map((item) => `<div class="order-item"><span>${escapeHTML(item.product_name_ar)} ${item.variant_name_ar ? `— ${escapeHTML(item.variant_name_ar)}` : ""} × ${item.quantity}</span><strong>${formatMoney(item.line_total_iqd)}</strong></div>`).join("")}</div>
+      <div>${order.items.map((item) => `<div class="order-item"><span>${escapeHTML(item.product_name_ar)} ${item.variant_name_ar ? `— ${escapeHTML(item.variant_name_ar)}` : ""}<br><small>${item.quantity} × ${formatMoney(item.unit_price_iqd)}</small></span><strong>${formatMoney(item.line_total_iqd)}</strong></div>`).join("")}</div>
       <div class="order-detail-grid"><div><span>المجموع الفرعي</span><strong>${formatMoney(order.subtotal_iqd)}</strong></div><div><span>الإجمالي</span><strong>${formatMoney(order.total_iqd)}</strong></div></div>
       <div class="order-detail-actions">
         <label>تحديث حالة الطلب<select id="order-status-update">${Object.entries(statusNames).map(([key, value]) => `<option value="${key}" ${order.status === key ? "selected" : ""}>${escapeHTML(value)}</option>`).join("")}</select></label>
         <button class="button button-primary mini-button" data-save-order="${order.id}">حفظ الحالة</button>
+        <a class="button button-secondary mini-button" href="/api/admin/orders/${order.id}/receipt" target="_blank" rel="noopener noreferrer">فتح / طباعة PDF</a>
+        <a class="button button-secondary mini-button" href="/api/admin/orders/${order.id}/receipt" download="receipt-${escapeHTML(order.receipt_number || order.order_number)}.pdf">تنزيل PDF</a>
         <button class="button button-secondary mini-button" data-print-order="${order.id}" data-print-target="receipt">طباعة الإيصال</button>
         <button class="button button-secondary mini-button" data-print-order="${order.id}" data-print-target="kitchen">تذكرة المطبخ</button>
       </div>
-      <p class="notification-note">سجل الحالة: ${order.history.map((entry) => `${escapeHTML(statusNames[entry.status] || entry.status)} (${escapeHTML(new Date(entry.created_at).toLocaleString("ar-IQ"))})`).join(" ← ")}</p>
+      <p class="notification-note">سجل الحالة: ${order.history.map((entry) => `${escapeHTML(statusNames[entry.status] || entry.status)} (${escapeHTML(formatDateTime(entry.created_at))})`).join(" ← ")}</p>
     </div>`;
   dialog.showModal();
 }
@@ -204,13 +257,19 @@ async function loadCustomers() {
 }
 
 async function loadReports() {
-  const data = await request(`/api/admin/reports?period=${encodeURIComponent($$("#report-period").value)}`);
+  const params = new URLSearchParams({ period: $$("#report-period").value });
+  if ($$("#report-date-from").value) params.set("dateFrom", $$("#report-date-from").value);
+  if ($$("#report-date-to").value) params.set("dateTo", $$("#report-date-to").value);
+  const data = await request(`/api/admin/reports?${params}`);
+  currentReportData = data;
   renderStats($$("#report-stats"), [
     { label: "عدد الطلبات", value: Number(data.summary.orders || 0).toLocaleString("ar-IQ"), note: "ضمن الفترة المحددة" },
     { label: "إجمالي المبيعات", value: formatMoney(data.summary.sales), note: "باستثناء الطلبات الملغاة" },
     { label: "رسوم التوصيل", value: formatMoney(data.summary.delivery_fees), note: "من الطلبات غير الملغاة" },
+    { label: "طلبات مكتملة", value: Number(data.summary.completed || 0).toLocaleString("ar-IQ"), note: "تم توصيلها" },
     { label: "طلبات ملغاة", value: Number(data.summary.cancelled || 0).toLocaleString("ar-IQ"), note: "ضمن الفترة المحددة" },
   ]);
+  renderSalesChart($$("#report-sales-chart"), data.daily);
   $$("#daily-report").innerHTML = data.daily.length ? data.daily.map((row) =>
     `<tr><td>${escapeHTML(row.day)}</td><td>${row.orders}</td><td>${formatMoney(row.sales)}</td></tr>`
   ).join("") : emptyRow(3);
@@ -220,6 +279,35 @@ async function loadReports() {
   $$("#payments-report").innerHTML = data.payments.length ? data.payments.map((row) =>
     `<tr><td>${row.payment_method === "cash_on_delivery" ? "نقداً عند الاستلام" : "إلكتروني"}</td><td>${row.orders}</td><td>${formatMoney(row.paid)}</td></tr>`
   ).join("") : emptyRow(3);
+}
+
+function downloadReport() {
+  if (!currentReportData) throw new Error("حمّلوا بيانات التقرير أولاً.");
+  const rows = [
+    ["نوع التقرير", "القيمة"],
+    ["من", currentReportData.dateFrom],
+    ["إلى", currentReportData.dateTo],
+    ["عدد الطلبات", currentReportData.summary.orders],
+    ["المبيعات", currentReportData.summary.sales],
+    ["رسوم التوصيل", currentReportData.summary.delivery_fees],
+    ["الطلبات المكتملة", currentReportData.summary.completed],
+    ["الطلبات الملغاة", currentReportData.summary.cancelled],
+    [],
+    ["المبيعات اليومية", "عدد الطلبات", "المبيعات (IQD)"],
+    ...currentReportData.daily.map((row) => [row.day, row.orders, row.sales]),
+    [],
+    ["الأكثر مبيعاً", "الكمية", "المبيعات (IQD)"],
+    ...currentReportData.bestSellers.map((row) => [row.product_name_ar, row.quantity, row.sales]),
+  ];
+  const csv = `\uFEFF${rows.map((row) => row.map((cell) =>
+    `"${String(cell ?? "").replaceAll('"', '""')}"`
+  ).join(",")).join("\r\n")}`;
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `VENTO-report-${currentReportData.dateFrom}-${currentReportData.dateTo}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 async function loadSettings() {
@@ -236,6 +324,9 @@ async function loadSettings() {
     <td><input type="time" data-hour="closesAt" data-day="${hour.weekday}" value="${escapeHTML(hour.closes_at)}"></td>
     <td><input type="checkbox" data-hour="active" data-day="${hour.weekday}" ${hour.active ? "checked" : ""} aria-label="تفعيل ${dayNames[hour.weekday]}"></td></tr>
   `).join("");
+  const preview = $$("#business-logo-preview");
+  preview.classList.toggle("hidden", !data.logoAvailable);
+  if (data.logoAvailable) preview.src = `/api/business-logo?updated=${Date.now()}`;
 }
 
 async function loadBanners() {
@@ -267,13 +358,18 @@ function checkbox(name, label, checked) {
 function productForm(product = null) {
   const categories = adminState.categories.length ? adminState.categories : [];
   const variants = (product?.variants || []).map((item) => `${item.name_ar}|${item.price_iqd ?? ""}`).join("\n");
+  const currentImage = product?.images?.[0] || "";
+  const imageUrl = currentImage.startsWith("/api/product-images/") ? "" : currentImage;
   openDialog(`<form class="modal-form" id="product-form" data-id="${product?.id || ""}">
     <span class="eyebrow eyebrow-dark">${product ? "تعديل بيانات المنتج" : "إضافة منتج جديد"}</span><h2>${product ? escapeHTML(product.name_ar) : "منتج جديد"}</h2>
     <label>اسم المنتج بالعربية<input name="name" required maxlength="160" value="${escapeHTML(product?.name_ar || "")}"></label>
     <label>التصنيف<select name="categoryId" required>${categories.map((category) => `<option value="${category.id}" ${product?.category_id === category.id ? "selected" : ""}>${escapeHTML(category.name_ar)}</option>`).join("")}</select></label>
     <label>السعر الأساسي بالدينار العراقي<input name="price" type="number" min="1" value="${product?.price_iqd ?? ""}" placeholder="اتركوه فارغاً حتى تحديد السعر"></label>
     <label>الوصف<textarea name="description" maxlength="2000">${escapeHTML(product?.description_ar || "")}</textarea></label>
-    <label>رابط الصورة (https:// أو مسار محلي)<input name="image" dir="ltr" value="${escapeHTML(product?.images?.[0] || "")}" placeholder="https://..."></label>
+    <label>رابط الصورة (اختياري)<input name="image" dir="ltr" value="${escapeHTML(imageUrl)}" placeholder="https://..."></label>
+    <input name="currentImage" type="hidden" value="${escapeHTML(currentImage)}">
+    <label>رفع صورة جديدة (PNG أو JPEG، حتى 600 كيلوبايت)<input name="imageFile" type="file" accept="image/png,image/jpeg"></label>
+    ${checkbox("removeImage", "إزالة الصورة الحالية", false)}
     <label>الأحجام والخيارات (خيار لكل سطر: الاسم|السعر)<textarea name="variants" placeholder="صغير|&#10;كبير|">${escapeHTML(variants)}</textarea></label>
     ${checkbox("available", "متاح للطلب", product ? !!product.available : true)}
     ${checkbox("featured", "منتج مميز", !!product?.featured)}
@@ -326,9 +422,27 @@ function staffForm() {
   </form>`);
 }
 
+function readImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(reader.result));
+    reader.addEventListener("error", () => reject(new Error("تعذر قراءة ملف الصورة.")));
+    reader.readAsDataURL(file);
+  });
+}
+
 async function saveProduct(form) {
   const values = new FormData(form);
-  const image = values.get("image").trim();
+  const image = String(values.get("image") || "").trim();
+  const imageFile = values.get("imageFile");
+  const currentImage = String(values.get("currentImage") || "");
+  let imageData = "";
+  if (imageFile instanceof File && imageFile.size) {
+    if (!["image/png", "image/jpeg"].includes(imageFile.type) || imageFile.size > 600 * 1024) {
+      throw new Error("يجب أن تكون الصورة PNG أو JPEG وألا يتجاوز حجمها 600 كيلوبايت.");
+    }
+    imageData = await readImageFile(imageFile);
+  }
   const variants = values.get("variants").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
     const [name, price = ""] = line.split("|");
     return { name: name.trim(), price: price.trim() };
@@ -336,7 +450,10 @@ async function saveProduct(form) {
   const payload = {
     name: values.get("name").trim(), categoryId: Number(values.get("categoryId")),
     price: values.get("price") || null, description: values.get("description"),
-    images: image ? [image] : [], variants,
+    images: imageData ? [] : image ? [image] : (
+      currentImage.startsWith("/api/product-images/") && !values.has("removeImage") ? undefined : []
+    ),
+    imageData, variants,
     available: values.has("available"), featured: values.has("featured"),
     isNew: values.has("isNew"), sortOrder: 0,
   };
@@ -352,7 +469,10 @@ async function saveProduct(form) {
 async function submitSettings(form) {
   const settings = {};
   for (const [key, value] of new FormData(form).entries()) settings[key] = value;
-  for (const key of ["payment_cash_enabled", "payment_electronic_enabled", "printer_enabled"]) {
+  for (const key of [
+    "payment_cash_enabled", "payment_electronic_enabled", "printer_enabled",
+    "store_enabled", "delivery_enabled",
+  ]) {
     settings[key] = form.elements.namedItem(key).checked;
   }
   const hours = dayNames.map((_, weekday) => ({
@@ -364,6 +484,27 @@ async function submitSettings(form) {
   await request("/api/admin/settings", { method: "PUT", body: JSON.stringify({ settings, hours }) });
   showToast("حُفظت إعدادات المتجر.");
   await loadSettings();
+}
+
+async function uploadBusinessLogo(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  if (!["image/png", "image/jpeg"].includes(file.type) || file.size > 600 * 1024) {
+    showToast("يجب أن يكون الشعار PNG أو JPEG وألا يتجاوز 600 كيلوبايت.");
+    event.target.value = "";
+    return;
+  }
+  try {
+    await request("/api/admin/logo", {
+      method: "PUT", body: JSON.stringify({ imageData: await readImageFile(file) }),
+    });
+    await loadSettings();
+    showToast("تم تحديث شعار المتجر والإيصال.");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    event.target.value = "";
+  }
 }
 
 async function handleSubmit(event) {
@@ -418,10 +559,26 @@ async function handleSubmit(event) {
       const submit = form.querySelector("button[type=submit]");
       submit.disabled = true;
       try {
-        const values = new FormData(form);
-        const data = await request("/api/admin/login", { method: "POST", body: JSON.stringify(Object.fromEntries(values.entries())) });
-        form.reset();
-        showApp(data.user, data.csrfToken);
+        if (!otpPending) {
+          const values = new FormData(form);
+          const data = await request("/api/admin/login", { method: "POST", body: JSON.stringify({
+            username: values.get("username"), password: values.get("password"),
+          }) });
+          if (data.otpRequired) {
+            otpPending = true;
+            form.elements.namedItem("password").disabled = true;
+            $$("#otp-step").classList.remove("hidden");
+            $$("#otp-input").required = true;
+            submit.innerHTML = "التحقق والدخول";
+            $$("#otp-input").focus();
+          }
+        } else {
+          const data = await request("/api/admin/verify-otp", { method: "POST", body: JSON.stringify({
+            otp: form.elements.namedItem("otp").value,
+          }) });
+          form.reset();
+          showApp(data.user, data.csrfToken);
+        }
       } catch (error) {
         $$("#login-error").textContent = error.message;
         $$("#login-error").classList.remove("hidden");
@@ -441,6 +598,20 @@ async function eventClick(event) {
   if (jump) return navigate(jump.dataset.jump);
   if (event.target.closest("[data-close-dialog]")) return $$("#admin-dialog").close();
   const action = event.target.closest("[data-action]")?.dataset.action;
+  if (action === "apply-report-filter") {
+    const from = $$("#report-date-from").value;
+    const to = $$("#report-date-to").value;
+    if (Boolean(from) !== Boolean(to)) return showToast("أدخلوا تاريخ البداية والنهاية معاً.");
+    return loadReports();
+  }
+  if (action === "download-report") return downloadReport();
+  if (action === "remove-logo") {
+    if (!window.confirm("هل تريدون إزالة شعار المتجر؟")) return;
+    await request("/api/admin/logo", { method: "DELETE", body: "{}" });
+    await loadSettings();
+    showToast("تمت إزالة الشعار.");
+    return;
+  }
   if (action === "add-product") {
     if (!adminState.categories.length) await loadCategories();
     return productForm();
@@ -481,7 +652,7 @@ async function eventClick(event) {
     if (product) {
       await request(`/api/admin/products/${product.id}`, { method: "PUT", body: JSON.stringify({
         name: product.name_ar, categoryId: product.category_id, price: product.price_iqd,
-        description: product.description_ar, images: product.images,
+        description: product.description_ar,
         variants: product.variants.map((item) => ({ name: item.name_ar, price: item.price_iqd, available: !!item.available })),
         available: !product.available, featured: !!product.featured, isNew: !!product.is_new,
         sortOrder: product.sort_order,
@@ -489,6 +660,13 @@ async function eventClick(event) {
       await loadProducts();
       showToast("تم تحديث توفر المنتج.");
     }
+    return;
+  }
+  const deleteProduct = event.target.closest("[data-delete-product]");
+  if (deleteProduct && window.confirm("سيُخفى المنتج عن قائمة المتجر مع الاحتفاظ به في الطلبات السابقة. هل تريدون المتابعة؟")) {
+    await request(`/api/admin/products/${deleteProduct.dataset.deleteProduct}`, { method: "DELETE", body: "{}" });
+    await loadProducts();
+    showToast("تم إيقاف المنتج مع الاحتفاظ بسجلات الطلبات.");
     return;
   }
   const toggleArea = event.target.closest("[data-toggle-area]");
@@ -574,9 +752,13 @@ document.addEventListener("submit", (event) => handleSubmit(event));
 document.addEventListener("click", (event) => {
   eventClick(event).catch((error) => showToast(error.message));
 });
-$$("admin-menu-toggle").addEventListener("click", () => $$("#sidebar").classList.toggle("open"));
-$$("order-status").addEventListener("change", () => loadOrders().catch((error) => showToast(error.message)));
-$$("report-period").addEventListener("change", () => loadReports().catch((error) => showToast(error.message)));
+$$("#admin-menu-toggle").addEventListener("click", () => $$("#sidebar").classList.toggle("open"));
+$$("#order-status").addEventListener("change", () => loadOrders().catch((error) => showToast(error.message)));
+$$("#order-area").addEventListener("change", () => loadOrders().catch((error) => showToast(error.message)));
+$$("#order-date-from").addEventListener("change", () => loadOrders().catch((error) => showToast(error.message)));
+$$("#order-date-to").addEventListener("change", () => loadOrders().catch((error) => showToast(error.message)));
+$$("#report-period").addEventListener("change", () => loadReports().catch((error) => showToast(error.message)));
+$$("#business-logo-file").addEventListener("change", (event) => uploadBusinessLogo(event));
 debounceLoad($$("#order-search"), "orders");
 debounceLoad($$("#customer-search"), "customers");
 startSession();

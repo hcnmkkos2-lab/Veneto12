@@ -1,3 +1,7 @@
+import base64
+import contextlib
+import hashlib
+import io
 import http.cookiejar
 import json
 import os
@@ -11,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 from unittest import mock
 from zoneinfo import ZoneInfo
+
+from PIL import Image
 
 import database
 import server
@@ -38,16 +44,25 @@ class PlatformTests(unittest.TestCase):
         cls.temp_dir.cleanup()
 
     def setUp(self):
+        server.OTP_SEND_ATTEMPTS.clear()
         self.cookies = http.cookiejar.CookieJar()
         self.client = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(self.cookies)
         )
+        self.sent_otp_codes = []
+        self.email_patch = mock.patch.object(
+            server, "send_admin_otp_email",
+            side_effect=lambda code: self.sent_otp_codes.append(code),
+        )
+        self.email_patch.start()
         with database.connect() as db:
             db.execute("DELETE FROM orders")
             db.execute("DELETE FROM customers")
             db.execute("DELETE FROM carts")
             db.execute("DELETE FROM products")
             db.execute("DELETE FROM admin_sessions")
+            db.execute("DELETE FROM admin_otp_challenges")
+            db.execute("DELETE FROM business_assets")
             db.execute("UPDATE working_hours SET opens_at='12:00',closes_at='02:00',active=1")
             db.execute(
                 "UPDATE business_settings SET value='1' WHERE key='payment_cash_enabled'"
@@ -59,6 +74,9 @@ class PlatformTests(unittest.TestCase):
             db.execute("UPDATE business_settings SET value='' WHERE key='printer_host'")
             db.execute("UPDATE business_settings SET value='9100' WHERE key='printer_port'")
         self.csrf = self.login()
+
+    def tearDown(self):
+        self.email_patch.stop()
 
     def call(self, method, path, payload=None, csrf=True):
         headers = {"Content-Type": "application/json"}
@@ -86,8 +104,86 @@ class PlatformTests(unittest.TestCase):
             {"username": "test-manager", "password": "test-password-long-enough"},
             csrf=False,
         )
+        self.assertEqual(status, 202)
+        self.assertTrue(response["otpRequired"])
+        status, verified = self.call(
+            "POST", "/api/admin/verify-otp", {"otp": self.sent_otp_codes[-1]}, csrf=False
+        )
         self.assertEqual(status, 200)
-        return response["csrfToken"]
+        return verified["csrfToken"]
+
+    def test_admin_login_requires_email_otp_before_creating_session(self):
+        status, _ = self.call("POST", "/api/admin/logout", {})
+        self.assertEqual(status, 200)
+        self.csrf = ""
+        status, pending = self.call("POST", "/api/admin/login", {
+            "username": "test-manager", "password": "test-password-long-enough",
+        }, csrf=False)
+        self.assertEqual(status, 202)
+        self.assertTrue(pending["otpRequired"])
+        status, _ = self.call("GET", "/api/admin/session")
+        self.assertEqual(status, 401)
+        code = self.sent_otp_codes[-1]
+        wrong_code = "000000" if code != "000000" else "000001"
+        status, _ = self.call(
+            "POST", "/api/admin/verify-otp", {"otp": wrong_code}, csrf=False
+        )
+        self.assertEqual(status, 401)
+        status, _ = self.call("GET", "/api/admin/session")
+        self.assertEqual(status, 401)
+        status, verified = self.call(
+            "POST", "/api/admin/verify-otp", {"otp": code}, csrf=False
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(verified["user"]["username"], "test-manager")
+        status, session = self.call("GET", "/api/admin/session")
+        self.assertEqual(status, 200)
+        self.assertEqual(session["user"]["username"], "test-manager")
+
+    def test_admin_otp_expires_and_locks_after_five_incorrect_codes(self):
+        status, _ = self.call("POST", "/api/admin/logout", {})
+        self.assertEqual(status, 200)
+        self.csrf = ""
+        credentials = {"username": "test-manager", "password": "test-password-long-enough"}
+        status, _ = self.call("POST", "/api/admin/login", credentials, csrf=False)
+        self.assertEqual(status, 202)
+        with database.connect() as db:
+            db.execute(
+                "UPDATE admin_otp_challenges SET expires_at=?",
+                ((datetime.now(ZoneInfo("UTC"))).isoformat(timespec="seconds"),),
+            )
+        status, _ = self.call(
+            "POST", "/api/admin/verify-otp", {"otp": self.sent_otp_codes[-1]}, csrf=False
+        )
+        self.assertEqual(status, 401)
+        status, _ = self.call("POST", "/api/admin/login", credentials, csrf=False)
+        self.assertEqual(status, 202)
+        code = self.sent_otp_codes[-1]
+        wrong_code = "000000" if code != "000000" else "000001"
+        for _ in range(5):
+            status, _ = self.call(
+                "POST", "/api/admin/verify-otp", {"otp": wrong_code}, csrf=False
+            )
+            self.assertEqual(status, 401)
+        status, _ = self.call(
+            "POST", "/api/admin/verify-otp", {"otp": code}, csrf=False
+        )
+        self.assertEqual(status, 401)
+        status, _ = self.call("GET", "/api/admin/session")
+        self.assertEqual(status, 401)
+
+    def test_admin_login_fails_closed_when_email_delivery_is_unconfigured(self):
+        status, _ = self.call("POST", "/api/admin/logout", {})
+        self.assertEqual(status, 200)
+        self.csrf = ""
+        with mock.patch.object(server, "send_admin_otp_email", side_effect=RuntimeError("SMTP missing")):
+            status, response = self.call("POST", "/api/admin/login", {
+                "username": "test-manager", "password": "test-password-long-enough",
+            }, csrf=False)
+        self.assertEqual(status, 503)
+        self.assertIn("SMTP", response["error"])
+        status, _ = self.call("GET", "/api/admin/session")
+        self.assertEqual(status, 401)
 
     def create_product_and_area(self, fee=1500):
         with database.connect() as db:
@@ -243,6 +339,139 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(report["summary"]["sales"], 24000)
         self.assertEqual(report["summary"]["delivery_fees"], 1500)
         self.assertEqual(report["bestSellers"][0]["quantity"], 2)
+
+    def test_dashboard_and_order_filters_use_database_records(self):
+        product_id, area_id = self.create_product_and_area()
+        self.fill_cart(product_id)
+        with mock.patch.object(server, "store_status", return_value=True):
+            status, created = self.call("POST", "/api/orders", {
+                "fullName": "عميل لوحة الإدارة", "phone": "07812345678",
+                "areaId": area_id, "address": "عنوان الاختبار",
+            })
+        self.assertEqual(status, 201)
+        today = datetime.now(ZoneInfo("Asia/Baghdad")).date().isoformat()
+        status, summary = self.call("GET", "/api/admin/summary")
+        self.assertEqual(status, 200)
+        self.assertEqual(summary["totalOrders"], 1)
+        self.assertEqual(summary["newOrders"], 1)
+        self.assertEqual(summary["pendingOrders"], 1)
+        self.assertEqual(summary["todaySales"], 24000)
+        self.assertEqual(summary["monthlySales"], 24000)
+        self.assertEqual(len(summary["salesChart"]), 14)
+
+        status, orders = self.call(
+            "GET",
+            f"/api/admin/orders?q={created['orderNumber']}&status=pending"
+            f"&areaId={area_id}&dateFrom={today}&dateTo={today}",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(orders), 1)
+        self.assertEqual(orders[0]["order_number"], created["orderNumber"])
+        status, report = self.call(
+            "GET", f"/api/admin/reports?dateFrom={today}&dateTo={today}"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(report["summary"]["sales"], 24000)
+        self.assertEqual(report["summary"]["delivery_fees"], 1500)
+        self.assertEqual(report["summary"]["completed"], 0)
+
+    def test_checkout_generates_private_arabic_pdf_receipt_for_customer_and_admin(self):
+        image_buffer = io.BytesIO()
+        Image.new("RGB", (4, 4), (160, 110, 75)).save(image_buffer, format="PNG")
+        image_data = "data:image/png;base64," + base64.b64encode(
+            image_buffer.getvalue()
+        ).decode("ascii")
+        status, _ = self.call("PUT", "/api/admin/logo", {"imageData": image_data})
+        self.assertEqual(status, 200)
+
+        product_id, area_id = self.create_product_and_area()
+        self.fill_cart(product_id)
+        with mock.patch.object(server, "store_status", return_value=True):
+            status, order = self.call("POST", "/api/orders", {
+                "fullName": "سارة أحمد", "phone": "07812345678",
+                "areaId": area_id, "address": "المنصور، بغداد",
+            })
+        self.assertEqual(status, 201)
+        self.assertRegex(order["receiptNumber"], r"^VR-[0-9]{6}-[A-F0-9]{16}$")
+        self.assertRegex(order["receiptUrl"], r"^/receipt/[A-Za-z0-9_-]{43}\.pdf$")
+        token = order["receiptUrl"].split("/")[-1].removesuffix(".pdf")
+        with database.connect() as db:
+            stored = db.execute(
+                "SELECT receipt_number,token_hash,pdf_data FROM receipts WHERE order_id="
+                "(SELECT id FROM orders WHERE order_number=?)",
+                (order["orderNumber"],),
+            ).fetchone()
+        self.assertEqual(stored["receipt_number"], order["receiptNumber"])
+        self.assertEqual(stored["token_hash"], hashlib.sha256(token.encode()).hexdigest())
+        self.assertNotIn(token.encode(), stored["pdf_data"])
+        self.assertTrue(stored["pdf_data"].startswith(b"%PDF-"))
+        self.assertIn(b"/FontFile2", stored["pdf_data"])
+
+        customer = urllib.request.build_opener()
+        receipt_logs = io.StringIO()
+        with contextlib.redirect_stdout(receipt_logs):
+            with customer.open(self.base_url + order["receiptUrl"], timeout=5) as response:
+                self.assertEqual(response.headers.get_content_type(), "application/pdf")
+                self.assertIn("attachment", response.headers["Content-Disposition"])
+                customer_pdf = response.read()
+            with self.assertRaises(urllib.error.HTTPError) as invalid_receipt:
+                customer.open(
+                    self.base_url + "/receipt/" + ("A" * 43) + ".pdf", timeout=5
+                )
+            self.assertEqual(invalid_receipt.exception.code, 404)
+            invalid_receipt.exception.close()
+        self.assertEqual(customer_pdf, stored["pdf_data"])
+        self.assertNotIn(token, receipt_logs.getvalue())
+        self.assertNotIn("A" * 43, receipt_logs.getvalue())
+
+        order_id = self.call("GET", "/api/admin/orders")[1][0]["id"]
+        status, admin_pdf = self.call("GET", f"/api/admin/orders/{order_id}/receipt")
+        self.assertEqual(status, 200)
+        self.assertEqual(admin_pdf, stored["pdf_data"])
+        status, detail = self.call("GET", f"/api/admin/orders/{order_id}")
+        self.assertEqual(status, 200)
+        self.assertEqual(detail["receipt_number"], order["receiptNumber"])
+
+    def test_uploaded_product_images_are_saved_and_preserved_on_edit(self):
+        image_buffer = io.BytesIO()
+        Image.new("RGB", (4, 4), (180, 125, 80)).save(image_buffer, format="PNG")
+        image_data = "data:image/png;base64," + base64.b64encode(
+            image_buffer.getvalue()
+        ).decode("ascii")
+        with database.connect() as db:
+            category_id = db.execute(
+                "SELECT id FROM product_categories WHERE slug='cakes'"
+            ).fetchone()["id"]
+        status, created = self.call("POST", "/api/admin/products", {
+            "name": "صورة اختبار", "categoryId": category_id, "price": 1000,
+            "images": [], "imageData": image_data,
+        })
+        self.assertEqual(status, 201)
+        status, products = self.call("GET", "/api/admin/products")
+        self.assertEqual(status, 200)
+        product = next(item for item in products if item["id"] == created["id"])
+        image_url = product["images"][0]
+        self.assertRegex(image_url, r"^/api/product-images/[0-9]+$")
+        status, image = self.call("GET", image_url)
+        self.assertEqual(status, 200)
+        self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
+
+        status, _ = self.call("PUT", f"/api/admin/products/{created['id']}", {
+            "name": "صورة اختبار بعد التعديل", "categoryId": category_id,
+            "price": 1000, "description": "", "available": True,
+            "variants": [],
+        })
+        self.assertEqual(status, 200)
+        status, products = self.call("GET", "/api/admin/products")
+        product = next(item for item in products if item["id"] == created["id"])
+        self.assertEqual(product["images"], [image_url])
+        status, image = self.call("GET", image_url)
+        self.assertEqual(status, 200)
+
+        status, _ = self.call("DELETE", f"/api/admin/products/{created['id']}", {})
+        self.assertEqual(status, 200)
+        status, _ = self.call("GET", image_url)
+        self.assertEqual(status, 404)
 
     def test_network_printer_test_and_receipt_send_escpos_bytes(self):
         product_id, area_id = self.create_product_and_area()
