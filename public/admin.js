@@ -12,7 +12,6 @@ const statusNames = {
 const dayNames = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"];
 let searchTimers = {};
 let toastTimer;
-let otpPending = false;
 let currentReportData = null;
 let currentReceiptUrl = "";
 
@@ -40,13 +39,8 @@ function showToast(message) {
 
 function showLogin() {
   adminState.csrf = "";
-  otpPending = false;
   const form = $$("#login-form");
   form.reset();
-  form.elements.namedItem("password").disabled = false;
-  $$("#otp-step").classList.add("hidden");
-  $$("#otp-input").required = false;
-  form.querySelector("button[type=submit]").innerHTML = 'دخول إلى لوحة التحكم <span>←</span>';
   $$("#admin-app").classList.add("hidden");
   $$("#login-screen").classList.remove("hidden");
 }
@@ -559,26 +553,12 @@ async function handleSubmit(event) {
       const submit = form.querySelector("button[type=submit]");
       submit.disabled = true;
       try {
-        if (!otpPending) {
-          const values = new FormData(form);
-          const data = await request("/api/admin/login", { method: "POST", body: JSON.stringify({
-            username: values.get("username"), password: values.get("password"),
-          }) });
-          if (data.otpRequired) {
-            otpPending = true;
-            form.elements.namedItem("password").disabled = true;
-            $$("#otp-step").classList.remove("hidden");
-            $$("#otp-input").required = true;
-            submit.innerHTML = "التحقق والدخول";
-            $$("#otp-input").focus();
-          }
-        } else {
-          const data = await request("/api/admin/verify-otp", { method: "POST", body: JSON.stringify({
-            otp: form.elements.namedItem("otp").value,
-          }) });
-          form.reset();
-          showApp(data.user, data.csrfToken);
-        }
+        const values = new FormData(form);
+        const data = await request("/api/admin/login", { method: "POST", body: JSON.stringify({
+          username: values.get("username"), password: values.get("password"),
+        }) });
+        form.reset();
+        showApp(data.user, data.csrfToken);
       } catch (error) {
         $$("#login-error").textContent = error.message;
         $$("#login-error").classList.remove("hidden");

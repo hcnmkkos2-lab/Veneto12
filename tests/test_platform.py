@@ -44,24 +44,16 @@ class PlatformTests(unittest.TestCase):
         cls.temp_dir.cleanup()
 
     def setUp(self):
-        server.OTP_SEND_ATTEMPTS.clear()
         self.cookies = http.cookiejar.CookieJar()
         self.client = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(self.cookies)
         )
-        self.sent_otp_codes = []
-        self.email_patch = mock.patch.object(
-            server, "send_admin_otp_email",
-            side_effect=lambda code: self.sent_otp_codes.append(code),
-        )
-        self.email_patch.start()
         with database.connect() as db:
             db.execute("DELETE FROM orders")
             db.execute("DELETE FROM customers")
             db.execute("DELETE FROM carts")
             db.execute("DELETE FROM products")
             db.execute("DELETE FROM admin_sessions")
-            db.execute("DELETE FROM admin_otp_challenges")
             db.execute("DELETE FROM business_assets")
             db.execute("UPDATE working_hours SET opens_at='12:00',closes_at='02:00',active=1")
             db.execute(
@@ -74,9 +66,6 @@ class PlatformTests(unittest.TestCase):
             db.execute("UPDATE business_settings SET value='' WHERE key='printer_host'")
             db.execute("UPDATE business_settings SET value='9100' WHERE key='printer_port'")
         self.csrf = self.login()
-
-    def tearDown(self):
-        self.email_patch.stop()
 
     def call(self, method, path, payload=None, csrf=True):
         headers = {"Content-Type": "application/json"}
@@ -104,86 +93,40 @@ class PlatformTests(unittest.TestCase):
             {"username": "test-manager", "password": "test-password-long-enough"},
             csrf=False,
         )
-        self.assertEqual(status, 202)
-        self.assertTrue(response["otpRequired"])
-        status, verified = self.call(
-            "POST", "/api/admin/verify-otp", {"otp": self.sent_otp_codes[-1]}, csrf=False
-        )
         self.assertEqual(status, 200)
-        return verified["csrfToken"]
+        return response["csrfToken"]
 
-    def test_admin_login_requires_email_otp_before_creating_session(self):
+    def test_admin_login_uses_password_and_opens_dashboard_without_email(self):
+        with database.connect() as db:
+            original_hash = db.execute(
+                "SELECT password_hash FROM staff_users WHERE username='test-manager'"
+            ).fetchone()["password_hash"]
         status, _ = self.call("POST", "/api/admin/logout", {})
         self.assertEqual(status, 200)
         self.csrf = ""
-        status, pending = self.call("POST", "/api/admin/login", {
+        status, _ = self.call("POST", "/api/admin/login", {
+            "username": "test-manager", "password": "incorrect-password",
+        }, csrf=False)
+        self.assertEqual(status, 401)
+        status, _ = self.call("GET", "/api/admin/session")
+        self.assertEqual(status, 401)
+        status, logged_in = self.call("POST", "/api/admin/login", {
             "username": "test-manager", "password": "test-password-long-enough",
         }, csrf=False)
-        self.assertEqual(status, 202)
-        self.assertTrue(pending["otpRequired"])
-        status, _ = self.call("GET", "/api/admin/session")
-        self.assertEqual(status, 401)
-        code = self.sent_otp_codes[-1]
-        wrong_code = "000000" if code != "000000" else "000001"
-        status, _ = self.call(
-            "POST", "/api/admin/verify-otp", {"otp": wrong_code}, csrf=False
-        )
-        self.assertEqual(status, 401)
-        status, _ = self.call("GET", "/api/admin/session")
-        self.assertEqual(status, 401)
-        status, verified = self.call(
-            "POST", "/api/admin/verify-otp", {"otp": code}, csrf=False
-        )
         self.assertEqual(status, 200)
-        self.assertEqual(verified["user"]["username"], "test-manager")
+        self.assertEqual(logged_in["user"]["username"], "test-manager")
+        self.assertNotIn("otpRequired", logged_in)
+        self.csrf = logged_in["csrfToken"]
         status, session = self.call("GET", "/api/admin/session")
         self.assertEqual(status, 200)
         self.assertEqual(session["user"]["username"], "test-manager")
-
-    def test_admin_otp_expires_and_locks_after_five_incorrect_codes(self):
-        status, _ = self.call("POST", "/api/admin/logout", {})
+        self.assertEqual(session["csrfToken"], logged_in["csrfToken"])
+        status, _ = self.call("GET", "/api/admin/summary")
         self.assertEqual(status, 200)
-        self.csrf = ""
-        credentials = {"username": "test-manager", "password": "test-password-long-enough"}
-        status, _ = self.call("POST", "/api/admin/login", credentials, csrf=False)
-        self.assertEqual(status, 202)
         with database.connect() as db:
-            db.execute(
-                "UPDATE admin_otp_challenges SET expires_at=?",
-                ((datetime.now(ZoneInfo("UTC"))).isoformat(timespec="seconds"),),
-            )
-        status, _ = self.call(
-            "POST", "/api/admin/verify-otp", {"otp": self.sent_otp_codes[-1]}, csrf=False
-        )
-        self.assertEqual(status, 401)
-        status, _ = self.call("POST", "/api/admin/login", credentials, csrf=False)
-        self.assertEqual(status, 202)
-        code = self.sent_otp_codes[-1]
-        wrong_code = "000000" if code != "000000" else "000001"
-        for _ in range(5):
-            status, _ = self.call(
-                "POST", "/api/admin/verify-otp", {"otp": wrong_code}, csrf=False
-            )
-            self.assertEqual(status, 401)
-        status, _ = self.call(
-            "POST", "/api/admin/verify-otp", {"otp": code}, csrf=False
-        )
-        self.assertEqual(status, 401)
-        status, _ = self.call("GET", "/api/admin/session")
-        self.assertEqual(status, 401)
-
-    def test_admin_login_fails_closed_when_email_delivery_is_unconfigured(self):
-        status, _ = self.call("POST", "/api/admin/logout", {})
-        self.assertEqual(status, 200)
-        self.csrf = ""
-        with mock.patch.object(server, "send_admin_otp_email", side_effect=RuntimeError("SMTP missing")):
-            status, response = self.call("POST", "/api/admin/login", {
-                "username": "test-manager", "password": "test-password-long-enough",
-            }, csrf=False)
-        self.assertEqual(status, 503)
-        self.assertIn("SMTP", response["error"])
-        status, _ = self.call("GET", "/api/admin/session")
-        self.assertEqual(status, 401)
+            self.assertEqual(db.execute(
+                "SELECT password_hash FROM staff_users WHERE username='test-manager'"
+            ).fetchone()["password_hash"], original_hash)
 
     def create_product_and_area(self, fee=1500):
         with database.connect() as db:
@@ -225,6 +168,17 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(order["deliveryFee"], 1500)
         self.assertEqual(order["total"], 25500)
         self.assertEqual(order["paymentStatus"], "pending")
+        with database.connect() as db:
+            saved_order = db.execute(
+                "SELECT delivery_area_id,delivery_area_name,delivery_fee_iqd,"
+                "delivery_fee_determined,total_iqd FROM orders WHERE order_number=?",
+                (order["orderNumber"],),
+            ).fetchone()
+        self.assertEqual(saved_order["delivery_area_id"], area_id)
+        self.assertEqual(saved_order["delivery_area_name"], "المنصور")
+        self.assertEqual(saved_order["delivery_fee_iqd"], 1500)
+        self.assertEqual(saved_order["delivery_fee_determined"], 1)
+        self.assertEqual(saved_order["total_iqd"], 25500)
         status, featured = self.call("GET", "/api/products?group=featured")
         self.assertEqual(status, 200)
         self.assertEqual(featured[0]["name_ar"], "كيكة فانيلا")
@@ -310,10 +264,43 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(fees["البنوك"], 1000)
         self.assertEqual(fees["الشعب"], 1000)
         self.assertEqual(fees["باب المعظم"], 3000)
-        self.assertGreaterEqual(sum(area["district"] == "karkh" for area in areas), 20)
-        self.assertGreaterEqual(sum(area["district"] == "rusafa" for area in areas), 25)
-        for name in ("الحرية", "المنصور", "حي أور", "الشرطة الرابعة", "الشرطة الثانية", "الغزالية"):
+        self.assertGreaterEqual(len(areas), 60)
+        for name in (
+            "الحرية", "المنصور", "حي أور", "الشرطة الرابعة", "الشرطة الثانية",
+            "الشعلة", "الغزالية", "شارع فلسطين",
+        ):
             self.assertIsNone(fees[name])
+
+    def test_delivery_areas_remain_listed_when_delivery_is_disabled(self):
+        with database.connect() as db:
+            original = db.execute(
+                "SELECT value FROM business_settings WHERE key='delivery_enabled'"
+            ).fetchone()["value"]
+            db.execute(
+                "UPDATE business_settings SET value='0' WHERE key='delivery_enabled'"
+            )
+        try:
+            status, areas = self.call("GET", "/api/areas")
+            self.assertEqual(status, 200)
+            self.assertGreaterEqual(len(areas), 60)
+            self.assertIn("الحرية", {area["name_ar"] for area in areas})
+            self.assertEqual(
+                {area["name_ar"]: area["fee_iqd"] for area in areas}["مدينة الصدر"],
+                2000,
+            )
+            with mock.patch.object(server, "store_status", return_value=True):
+                status, response = self.call("POST", "/api/orders", {
+                    "fullName": "سارة أحمد", "phone": "07812345678",
+                    "areaId": areas[0]["id"], "address": "عنوان",
+                })
+            self.assertEqual(status, 409)
+            self.assertIn("التوصيل غير متاح", response["error"])
+        finally:
+            with database.connect() as db:
+                db.execute(
+                    "UPDATE business_settings SET value=? WHERE key='delivery_enabled'",
+                    (original,),
+                )
 
     def test_admin_mutations_require_csrf_token(self):
         status, response = self.call(
@@ -578,6 +565,7 @@ class PlatformTests(unittest.TestCase):
         status, page = self.call("GET", "/")
         self.assertEqual(status, 200)
         self.assertIn("حلويات ومعجنات فينيتو".encode(), page)
+        self.assertIn(b'id="area-select-cart"', page)
         status, admin = self.call("GET", "/admin")
         self.assertEqual(status, 200)
         self.assertIn("الدخول".encode(), admin)

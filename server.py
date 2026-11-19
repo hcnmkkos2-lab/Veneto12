@@ -11,9 +11,6 @@ import socket
 import sqlite3
 import time
 import textwrap
-import smtplib
-import ssl
-from email.message import EmailMessage
 from datetime import datetime, timedelta, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -54,8 +51,6 @@ PHONE_RE = re.compile(r"^[0-9]{7,15}$")
 MAX_BODY = 1_000_000
 MAX_IMAGE_BYTES = 600 * 1024
 LOGIN_ATTEMPTS = {}
-ADMIN_OTP_EMAIL = os.environ.get("ADMIN_OTP_EMAIL", "").strip()
-OTP_SEND_ATTEMPTS = {}
 RECEIPT_FONT = "VentoArabic"
 pdfmetrics.registerFont(TTFont(RECEIPT_FONT, str(ROOT / "assets" / "fonts" / "DejaVuSans.ttf")))
 
@@ -338,41 +333,6 @@ def build_receipt_pdf(order, items, receipt_number, business_name, phone, addres
     return buffer.getvalue()
 
 
-def send_admin_otp_email(code):
-    host = os.environ.get("SMTP_HOST", "").strip()
-    username = os.environ.get("SMTP_USERNAME", "").strip()
-    password = os.environ.get("SMTP_PASSWORD", "")
-    sender = os.environ.get("SMTP_FROM", "").strip()
-    try:
-        port = int(os.environ.get("SMTP_PORT", "587"))
-    except ValueError:
-        raise RuntimeError("إعداد منفذ البريد الإلكتروني غير صحيح.") from None
-    if (
-        not ADMIN_OTP_EMAIL or not host or not username or not password
-        or not sender or not 1 <= port <= 65535
-    ):
-        raise RuntimeError("إرسال رمز الدخول غير مهيأ. يرجى ضبط إعدادات SMTP على الخادم.")
-
-    message = EmailMessage()
-    message["Subject"] = "رمز تسجيل الدخول إلى لوحة VENTO"
-    message["From"] = sender
-    message["To"] = ADMIN_OTP_EMAIL
-    message.set_content(
-        f"رمز التحقق لتسجيل الدخول إلى لوحة إدارة VENTO هو: {code}\n"
-        "صلاحية الرمز خمس دقائق. إذا لم تطلب تسجيل الدخول فتجاهل هذه الرسالة."
-    )
-    try:
-        with smtplib.SMTP(host, port, timeout=10) as smtp:
-            smtp.ehlo()
-            smtp.starttls(context=ssl.create_default_context())
-            smtp.ehlo()
-            smtp.login(username, password)
-            smtp.send_message(message)
-    except (OSError, smtplib.SMTPException) as error:
-        print(f"Admin OTP email delivery failed: {type(error).__name__}")
-        raise RuntimeError("تعذر إرسال رمز التحقق إلى بريد الإدارة.") from error
-
-
 def order_dict(row):
     result = row_dict(row)
     if result and not result.get("delivery_fee_determined", 1):
@@ -530,8 +490,6 @@ class VenitoHandler(BaseHTTPRequestHandler):
             return self._create_order()
         if path == "/api/admin/login" and method == "POST":
             return self._login()
-        if path == "/api/admin/verify-otp" and method == "POST":
-            return self._verify_admin_otp()
         if path == "/api/admin/session" and method == "GET":
             return self._admin_session()
         if path == "/api/admin/logout" and method == "POST":
@@ -690,12 +648,10 @@ class VenitoHandler(BaseHTTPRequestHandler):
 
     def _areas(self):
         with database.connect() as db:
-            rows = []
-            if get_setting(db, "delivery_enabled", "1") == "1":
-                rows = [row_dict(r) for r in db.execute(
-                    "SELECT id,name_ar,district,fee_iqd FROM delivery_areas "
-                    "WHERE active=1 ORDER BY district,name_ar"
-                )]
+            rows = [row_dict(r) for r in db.execute(
+                "SELECT id,name_ar,district,fee_iqd FROM delivery_areas "
+                "WHERE active=1 ORDER BY district,name_ar"
+            )]
         return self._json(200, rows)
 
     def _cart_api(self, method):
@@ -885,11 +841,6 @@ class VenitoHandler(BaseHTTPRequestHandler):
         attempts, blocked_until = LOGIN_ATTEMPTS.get(address, (0, 0))
         if blocked_until > now:
             fail("محاولات كثيرة. يرجى الانتظار قليلاً ثم المحاولة.", 429)
-        send_attempts, window_start = OTP_SEND_ATTEMPTS.get(address, (0, now))
-        if now - window_start >= 600:
-            send_attempts, window_start = 0, now
-        if send_attempts >= 3:
-            fail("تم تجاوز عدد رموز التحقق المسموح. حاول بعد عشر دقائق.", 429)
         with database.connect() as db:
             user = db.execute(
                 "SELECT id,password_hash,role,active FROM staff_users WHERE username=?",
@@ -910,106 +861,21 @@ class VenitoHandler(BaseHTTPRequestHandler):
                 LOGIN_ATTEMPTS[address] = (attempts, now + 300 if attempts >= 5 else 0)
                 fail("اسم المستخدم أو كلمة المرور غير صحيحة.", 401)
             LOGIN_ATTEMPTS.pop(address, None)
-            challenge = secrets.token_urlsafe(32)
-            code = f"{secrets.randbelow(1_000_000):06d}"
-            salt = secrets.token_bytes(16)
+            token = secrets.token_urlsafe(32)
+            csrf = secrets.token_urlsafe(32)
             created = datetime.now(timezone.utc)
             db.execute(
-                "DELETE FROM admin_otp_challenges WHERE staff_user_id=?", (user["id"],)
-            )
-            db.execute(
-                "INSERT INTO admin_otp_challenges "
-                "(challenge_hash,staff_user_id,otp_hash,otp_salt,expires_at,created_at) "
-                "VALUES (?,?,?,?,?,?)",
-                (hashlib.sha256(challenge.encode()).hexdigest(), user["id"],
-                 hashlib.scrypt(code.encode(), salt=salt, n=2**14, r=8, p=1).hex(),
-                 salt.hex(), (created + timedelta(minutes=5)).isoformat(timespec="seconds"),
+                "INSERT INTO admin_sessions (token_hash,staff_user_id,csrf_token,expires_at,created_at) "
+                "VALUES (?,?,?,?,?)",
+                (hashlib.sha256(token.encode()).hexdigest(), user["id"], csrf,
+                 (created + timedelta(hours=12)).isoformat(timespec="seconds"),
                  created.isoformat(timespec="seconds")),
             )
-        OTP_SEND_ATTEMPTS[address] = (send_attempts + 1, window_start)
-        try:
-            send_admin_otp_email(code)
-        except RuntimeError as error:
-            with database.connect() as db:
-                db.execute(
-                    "DELETE FROM admin_otp_challenges WHERE challenge_hash=?",
-                    (hashlib.sha256(challenge.encode()).hexdigest(),),
-                )
-            fail(str(error), 503)
-        return self._json(202, {
-            "otpRequired": True,
-            "message": "أُرسل رمز التحقق إلى بريد الإدارة.",
-        }, {"Set-Cookie": self._set_cookie(
-            "venito_admin_challenge", challenge, 300, same_site="Strict"
-        )})
-
-    def _verify_admin_otp(self):
-        challenge = self._cookie("venito_admin_challenge")
-        if not challenge:
-            fail("انتهت صلاحية طلب التحقق. سجّل الدخول مجدداً.", 401)
-        code = self._body().get("otp", "")
-        if not isinstance(code, str) or not re.fullmatch(r"[0-9]{6}", code):
-            fail("أدخل رمز التحقق المكوّن من ستة أرقام.")
-        challenge_hash = hashlib.sha256(challenge.encode()).hexdigest()
-        with database.connect() as db:
-            row = db.execute(
-                "SELECT * FROM admin_otp_challenges WHERE challenge_hash=?",
-                (challenge_hash,),
-            ).fetchone()
-            if not row:
-                fail("رمز التحقق غير صالح أو انتهت صلاحيته. سجّل الدخول مجدداً.", 401)
-            now = datetime.now(timezone.utc)
-            if datetime.fromisoformat(row["expires_at"]) <= now:
-                db.execute("DELETE FROM admin_otp_challenges WHERE challenge_hash=?", (challenge_hash,))
-                expired = True
-                valid = False
-            else:
-                expired = False
-                candidate = hashlib.scrypt(
-                    code.encode(), salt=bytes.fromhex(row["otp_salt"]), n=2**14, r=8, p=1
-                ).hex()
-                valid = hmac.compare_digest(candidate, row["otp_hash"])
-                if not valid:
-                    attempts = row["attempts"] + 1
-                    if attempts >= 5:
-                        db.execute(
-                            "DELETE FROM admin_otp_challenges WHERE challenge_hash=?",
-                            (challenge_hash,),
-                        )
-                    else:
-                        db.execute(
-                            "UPDATE admin_otp_challenges SET attempts=? WHERE challenge_hash=?",
-                            (attempts, challenge_hash),
-                        )
-            if valid:
-                user = db.execute(
-                    "SELECT id,username,role,active FROM staff_users WHERE id=?",
-                    (row["staff_user_id"],),
-                ).fetchone()
-                db.execute("DELETE FROM admin_otp_challenges WHERE challenge_hash=?", (challenge_hash,))
-                if user and user["active"]:
-                    token = secrets.token_urlsafe(32)
-                    csrf = secrets.token_urlsafe(32)
-                    created = now
-                    db.execute(
-                        "INSERT INTO admin_sessions (token_hash,staff_user_id,csrf_token,expires_at,created_at) "
-                        "VALUES (?,?,?,?,?)",
-                        (hashlib.sha256(token.encode()).hexdigest(), user["id"], csrf,
-                         (created + timedelta(hours=12)).isoformat(timespec="seconds"),
-                         created.isoformat(timespec="seconds")),
-                    )
-        if expired:
-            fail("انتهت صلاحية رمز التحقق. سجّل الدخول مجدداً.", 401)
-        if not valid:
-            fail("رمز التحقق غير صحيح.", 401)
-        if not user or not user["active"]:
-            fail("حساب الإدارة غير فعال.", 401)
-        headers = {"Set-Cookie": [
-            self._set_cookie("venito_admin", token, 60 * 60 * 12, same_site="Strict"),
-            self._set_cookie("venito_admin_challenge", "", 0, same_site="Strict"),
-        ]}
+        headers = {"Set-Cookie": self._set_cookie(
+            "venito_admin", token, 60 * 60 * 12, same_site="Strict"
+        )}
         return self._json(200, {
-            "user": {"username": user["username"], "role": user["role"]},
+            "user": {"username": username, "role": user["role"]},
             "csrfToken": csrf,
         }, headers)
 
