@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3d241d">
+  <title>الإدارة | VENITO</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin.css">
+  <script src="/admin.js" defer></script>
+</head>
+<body>
+  <section class="login-screen" id="login-screen">
+    <a class="brand login-brand" href="/"><span class="brand-mark">V</span><span class="brand-name"><strong>VENITO</strong><small>بوابة إدارة المتجر</small></span></a>
+    <form class="login-card" id="login-form">
+      <span class="eyebrow eyebrow-dark">مرحباً بعودتكم</span>
+      <h1>تسجيل <em>الدخول</em></h1>
+      <p>أدخل بيانات حساب الإدارة للمتابعة.</p>
+      <label>اسم المستخدم<input name="username" required autocomplete="username" dir="ltr"></label>
+      <label>كلمة المرور<input name="password" type="password" required autocomplete="current-password"></label>
+      <div class="form-error hidden" id="login-error" role="alert"></div>
+      <button class="button button-primary full-width" type="submit">دخول إلى لوحة التحكم <span>←</span></button>
+      <a class="back-home" href="/">العودة إلى المتجر</a>
+    </form>
+    <span class="login-copyright">© VENITO · Baghdad</span>
+  </section>
+
+  <div class="admin-app hidden" id="admin-app">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand side-brand" href="/"><span class="brand-mark">V</span><span class="brand-name"><strong>VENITO</strong><small>لوحة الإدارة</small></span></a>
+      <div class="side-label">القائمة الرئيسية</div>
+      <nav class="side-nav" id="side-nav">
+        <button class="nav-item active" data-view="overview"><span>◫</span>نظرة عامة</button>
+        <button class="nav-item" data-view="orders"><span>▤</span>الطلبات</button>
+        <button class="nav-item" data-view="products"><span>✿</span>المنتجات</button>
+        <button class="nav-item" data-view="categories"><span>▦</span>التصنيفات</button>
+        <button class="nav-item" data-view="areas"><span>⌖</span>مناطق التوصيل</button>
+        <button class="nav-item" data-view="customers"><span>♙</span>العملاء</button>
+        <button class="nav-item" data-view="reports"><span>▥</span>التقارير</button>
+        <div class="side-label side-label-spaced">إعدادات المتجر</div>
+        <button class="nav-item" data-view="banners"><span>▧</span>العروض والبانرات</button>
+        <button class="nav-item" data-view="settings"><span>⚙</span>إعدادات المتجر والطابعة</button>
+        <button class="nav-item admin-only" data-view="staff"><span>♧</span>المستخدمون والصلاحيات</button>
+      </nav>
+      <div class="sidebar-bottom"><span class="admin-avatar">V</span><div><strong id="sidebar-username">مدير المتجر</strong><small id="sidebar-role">مدير النظام</small></div><button id="logout-button" aria-label="تسجيل الخروج">↪</button></div>
+    </aside>
+
+    <main class="admin-main">
+      <header class="admin-topbar"><button class="mobile-menu-toggle" id="admin-menu-toggle" aria-label="فتح القائمة">☰</button><div><span class="eyebrow eyebrow-dark">مساحة العمل</span><h1 id="page-title">نظرة عامة</h1></div><a class="view-store" href="/" target="_blank" rel="noopener noreferrer">عرض المتجر <span>↗</span></a></header>
+      <div class="admin-content">
+        <section class="admin-view active" data-panel="overview">
+          <div class="welcome-row"><div><h2>أهلاً بكم في فينيتو <span>✳</span></h2><p>إليكم ملخص حركة المتجر اليوم.</p></div><span class="today-date" id="today-date"></span></div>
+          <div class="stat-grid" id="stats-grid"></div>
+          <div class="panel-card"><div class="panel-heading"><div><h3>أحدث الطلبات</h3><p>آخر الطلبات المسجلة في المتجر</p></div><button class="small-link" data-jump="orders">كل الطلبات ←</button></div><div class="table-wrap"><table><thead><tr><th>رقم الطلب</th><th>العميل</th><th>الحالة</th><th>الإجمالي</th><th>التاريخ</th></tr></thead><tbody id="recent-orders"></tbody></table></div></div>
+        </section>
+
+        <section class="admin-view" data-panel="products">
+          <div class="view-toolbar"><div><h2>المنتجات</h2><p>أضيفوا وعدّلوا منتجات قائمة فينيتو وأسعارها.</p></div><button class="button button-primary" data-action="add-product">+ إضافة منتج</button></div>
+          <div class="panel-card"><div class="table-wrap"><table><thead><tr><th>المنتج</th><th>التصنيف</th><th>السعر</th><th>التوفر</th><th>إجراءات</th></tr></thead><tbody id="products-table"></tbody></table></div></div>
+        </section>
+
+        <section class="admin-view" data-panel="categories">
+          <div class="view-toolbar"><div><h2>التصنيفات</h2><p>نظّموا منتجاتكم ضمن تصنيفات واضحة.</p></div><button class="button button-primary" data-action="add-category">+ تصنيف جديد</button></div>
+          <div class="panel-card"><div class="table-wrap"><table><thead><tr><th>التصنيف</th><th>المعرّف</th><th>الترتيب</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody id="categories-table"></tbody></table></div></div>
+        </section>
+
+        <section class="admin-view" data-panel="areas">
+          <div class="view-toolbar"><div><h2>مناطق التوصيل</h2><p>حدّدوا المناطق الفعالة وأجرة كل منطقة بالدينار العراقي.</p></div><button class="button button-primary" data-action="add-area">+ إضافة منطقة</button></div>
+          <div class="district-cards"><div class="district-card"><span>الكرخ</span><strong id="karkh-count">0 منطقة</strong></div><div class="district-card"><span>الرصافة</span><strong id="rusafa-count">0 منطقة</strong></div></div>
+          <div class="panel-card"><div class="table-wrap"><table><thead><tr><th>المنطقة</th><th>جانب بغداد</th><th>أجرة التوصيل</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody id="areas-table"></tbody></table></div></div>
+        </section>
+
+        <section class="admin-view" data-panel="orders">
+          <div class="view-toolbar"><div><h2>الطلبات</h2><p>راجعوا الطلبات وتابعوا مراحل تجهيزها.</p></div></div>
+          <div class="filter-row"><input id="order-search" type="search" placeholder="ابحثوا برقم الطلب أو الاسم أو الهاتف"><select id="order-status"><option value="">كل الحالات</option><option value="new">طلب جديد</option><option value="confirmed">تم التأكيد</option><option value="preparing">قيد التحضير</option><option value="ready">جاهز للتوصيل</option><option value="out_for_delivery">خرج للتوصيل</option><option value="delivered">تم التوصيل</option><option value="cancelled">ملغي</option></select></div>
+          <div class="panel-card"><div class="table-wrap"><table><thead><tr><th>رقم الطلب</th><th>العميل والهاتف</th><th>المنطقة</th><th>الحالة</th><th>الإجمالي</th><th>التاريخ</th><th></th></tr></thead><tbody id="orders-table"></tbody></table></div><div class="table-note">تُعرض أحدث 300 طلب.</div></div>
+        </section>
+
+        <section class="admin-view" data-panel="customers">
+          <div class="view-toolbar"><div><h2>العملاء</h2><p>معلومات العملاء وسجل طلباتهم من قاعدة البيانات.</p></div></div>
+          <div class="filter-row"><input id="customer-search" type="search" placeholder="ابحثوا بالاسم أو رقم الهاتف"></div>
+          <div class="panel-card"><div class="table-wrap"><table><thead><tr><th>العميل</th><th>رقم الهاتف</th><th>عدد الطلبات</th><th>إجمالي المشتريات</th><th>تاريخ التسجيل</th></tr></thead><tbody id="customers-table"></tbody></table></div></div>
+        </section>
+
+        <section class="admin-view" data-panel="reports">
+          <div class="view-toolbar"><div><h2>التقارير والتحليلات</h2><p>ملخص المبيعات والطلبات المسجلة في قاعدة البيانات.</p></div><select id="report-period"><option value="day">اليوم</option><option value="week" selected>آخر 7 أيام</option><option value="month">آخر 30 يوماً</option></select></div>
+          <div class="stat-grid" id="report-stats"></div>
+          <div class="report-columns"><div class="panel-card"><div class="panel-heading"><div><h3>المبيعات اليومية</h3><p>حسب الأيام ضمن الفترة المحددة</p></div></div><div class="table-wrap"><table><thead><tr><th>التاريخ</th><th>الطلبات</th><th>المبيعات</th></tr></thead><tbody id="daily-report"></tbody></table></div></div>
+          <div class="panel-card"><div class="panel-heading"><div><h3>الأكثر مبيعاً</h3><p>المنتجات بحسب عدد القطع</p></div></div><div class="table-wrap"><table><thead><tr><th>المنتج</th><th>الكمية</th><th>المبيعات</th></tr></thead><tbody id="best-sellers"></tbody></table></div></div></div>
+          <div class="panel-card"><div class="panel-heading"><div><div><h3>طرق الدفع</h3><p>ملخص عمليات الدفع المسجلة</p></div></div></div><div class="table-wrap"><table><thead><tr><th>طريقة الدفع</th><th>الطلبات</th><th>المدفوع</th></tr></thead><tbody id="payments-report"></tbody></table></div></div>
+        </section>
+
+        <section class="admin-view" data-panel="banners">
+          <div class="view-toolbar"><div><h2>العروض والبانرات</h2><p>إدارة الرسائل الترويجية الظاهرة في واجهة المتجر.</p></div><button class="button button-primary" data-action="add-banner">+ إضافة بانر</button></div>
+          <div class="panel-card"><div class="table-wrap"><table><thead><tr><th>العنوان</th><th>الوصف</th><th>الصورة</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody id="banners-table"></tbody></table></div></div>
+        </section>
+
+        <section class="admin-view" data-panel="settings">
+          <div class="view-toolbar"><div><h2>إعدادات المتجر</h2><p>بيانات التواصل وساعات العمل والطباعة وطرق الدفع.</p></div></div>
+          <form class="settings-form" id="settings-form">
+            <div class="panel-card settings-card"><div class="panel-heading"><div><h3>بيانات المتجر</h3><p>تظهر هذه البيانات للعملاء في الموقع.</p></div></div>
+              <div class="settings-grid"><label>الاسم التجاري<input name="business_name" maxlength="100"></label><label>الاسم بالعربية<input name="business_name_ar" maxlength="160"></label><label>رقم الهاتف<input name="phone" maxlength="40" dir="ltr"></label><label>العنوان<input name="address" maxlength="250"></label><label>إنستغرام<input name="instagram_url" placeholder="https://" dir="ltr"></label><label>فيسبوك<input name="facebook_url" placeholder="https://" dir="ltr"></label></div>
+            </div>
+            <div class="panel-card settings-card"><div class="panel-heading"><div><h3>أوقات العمل</h3><p>التوقيت المعتمد: بغداد (Asia/Baghdad). وقت الإغلاق السابق لوقت الافتتاح يعني بعد منتصف الليل.</p></div></div>
+              <div class="table-wrap"><table class="hours-table"><thead><tr><th>اليوم</th><th>الافتتاح</th><th>الإغلاق</th><th>مفتوح</th></tr></thead><tbody id="hours-table"></tbody></table></div>
+            </div>
+            <div class="panel-card settings-card"><div class="panel-heading"><div><h3>طرق الدفع</h3><p>لن يُفعّل الدفع الإلكتروني قبل ربط مزود عراقي موثّق.</p></div></div>
+              <div class="toggle-row"><label><input type="checkbox" name="payment_cash_enabled"> الدفع النقدي عند الاستلام</label><label><input type="checkbox" name="payment_electronic_enabled" disabled> الدفع الإلكتروني (يتطلب مزوداً وبيانات تاجر)</label></div>
+              <p class="settings-hint">لا تُقبل مدفوعات إلكترونية حالياً؛ لن يُسجّل أي طلب كمدفوع إلكترونياً.</p>
+            </div>
+            <div class="panel-card settings-card"><div class="panel-heading"><div><h3>طابعة الإيصالات الحرارية</h3><p>إرسال إيصالات ESC/POS عبر TCP/IP إلى طابعة شبكة متوافقة.</p></div></div>
+              <div class="toggle-row"><label><input type="checkbox" name="printer_enabled"> تفعيل الطباعة عبر الشبكة</label></div>
+              <div class="settings-grid"><label>عنوان الطابعة / IP<input name="printer_host" placeholder="مثال: 192.168.1.50" dir="ltr"></label><label>منفذ TCP<input name="printer_port" type="number" min="1" max="65535" dir="ltr"></label><label>عرض الورق<select name="printer_paper_width"><option value="58">58 مم</option><option value="80">80 مم</option></select></label></div>
+              <button class="button button-secondary" type="button" id="printer-test-button">إرسال ورقة اختبار</button>
+              <p class="settings-hint">تحتاج الطابعة إلى منفذ ESC/POS شبكي (غالباً 9100) واتصال من خادم التطبيق إلى شبكة الطابعة. دعم العربية يعتمد على طراز الطابعة وبرنامجها الثابت.</p>
+            </div>
+            <div class="form-error hidden" id="settings-error" role="alert"></div><button class="button button-primary" type="submit">حفظ الإعدادات</button>
+          </form>
+        </section>
+
+        <section class="admin-view" data-panel="staff">
+          <div class="view-toolbar"><div><h2>المستخدمون والصلاحيات</h2><p>أضيفوا حسابات الفريق بأدوار وصلاحيات محددة.</p></div><button class="button button-primary" data-action="add-staff">+ مستخدم جديد</button></div>
+          <div class="panel-card"><div class="table-wrap"><table><thead><tr><th>اسم المستخدم</th><th>الدور</th><th>الحالة</th><th>تاريخ الإضافة</th></tr></thead><tbody id="staff-table"></tbody></table></div></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <dialog class="admin-dialog" id="admin-dialog"><form method="dialog" class="modal-close"><button class="icon-button" aria-label="إغلاق">×</button></form><div id="dialog-content"></div></dialog>
+  <div class="toast" id="admin-toast" role="status" aria-live="polite"></div>
+</body>
+</html>

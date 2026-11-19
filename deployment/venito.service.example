@@ -1,0 +1,21 @@
+[Unit]
+Description=VENITO bakery ordering platform
+After=network.target
+
+[Service]
+Type=simple
+User=venito
+Group=venito
+WorkingDirectory=/opt/venito
+EnvironmentFile=/etc/venito/venito.env
+ExecStart=/usr/bin/python3 /opt/venito/server.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/venito
+
+[Install]
+WantedBy=multi-user.target

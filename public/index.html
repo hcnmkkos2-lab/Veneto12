@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#4a281f">
+  <meta name="description" content="حلويات ومعجنات فينيتو — مذاق يليق بلحظاتكم الجميلة.">
+  <title>فينيـتو | حلويات ومعجنات</title>
+  <link rel="preconnect" href="https://images.unsplash.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="announcement" id="announcement">
+    <span class="status-dot"></span><span id="store-status">نتحقق من أوقات العمل...</span>
+    <span class="announcement-separator">•</span>
+    <span>طازج كل يوم، بحب من فينيتو</span>
+  </div>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="فينيـتو، الصفحة الرئيسية">
+      <span class="brand-mark" aria-hidden="true">V</span>
+      <span class="brand-name"><strong>VENITO</strong><small>حلويات ومعجنات فينيتو</small></span>
+    </a>
+    <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-label="فتح القائمة" aria-expanded="false">☰</button>
+    <nav class="main-nav" id="main-nav" aria-label="القائمة الرئيسية">
+      <a href="#home">الرئيسية</a><a href="#menu">قائمة الطعام</a><a href="#story">حكايتنا</a><a href="#contact">تواصل معنا</a>
+    </nav>
+    <div class="header-actions">
+      <label class="search-box" aria-label="ابحث عن منتج">
+        <span aria-hidden="true">⌕</span>
+        <input id="product-search" type="search" placeholder="ماذا تشتهي؟" autocomplete="off">
+      </label>
+      <button class="cart-button" id="open-cart" aria-label="سلة التسوق">
+        <span aria-hidden="true">▱</span><span>السلة</span><b id="cart-count">0</b>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" id="home">
+      <div class="hero-photo" role="img" aria-label="تشكيلة شهية من الحلويات الطازجة"></div>
+      <div class="hero-shade"></div>
+      <div class="hero-content">
+        <span class="eyebrow"><i></i> تفاصيل صغيرة، سعادة كبيرة</span>
+        <h1>لحظاتكم الحلوة<br>تبدأ <em>من هنا</em></h1>
+        <p>من أول طبقة كريمة إلى آخر فتاتة... نصنع كل قطعة بحب لتكون ذكرى لا تُنسى.</p>
+        <div class="hero-actions">
+          <a class="button button-light" href="#menu">اكتشفوا قائمتنا <span>←</span></a>
+          <span class="hero-note">طازج يومياً <b>✳</b></span>
+        </div>
+      </div>
+      <div class="hero-stamp"><span>BAKED<br>WITH LOVE</span><b>✳</b></div>
+      <div class="hero-bottom"><span>01 — 03</span><span class="hero-line"></span><span>صُنع بشغف في بغداد</span></div>
+    </section>
+
+    <section class="intro section-wrap" id="story">
+      <div class="intro-kicker">أهلاً بكم في فينيتو</div>
+      <h2>نكهات تألفونها،<br><em>ولحظات تحبّونها.</em></h2>
+      <p>نؤمن أن أجمل اللحظات تبدأ بمذاق طيب. نخبز ونحضّر بحرص، ونختار مكوناتنا لتصل إليكم طازجة وتستحق المشاركة.</p>
+      <span class="intro-flourish" aria-hidden="true">✳</span>
+    </section>
+
+    <section class="collection-section section-wrap hidden" id="collections">
+      <div class="section-heading">
+        <div><span class="eyebrow eyebrow-dark">مختارة لكم</span><h2>حكاية كل <em>مذاق</em></h2></div>
+      </div>
+      <div class="collection-tabs" id="collection-tabs" role="tablist" aria-label="تشكيلات فينيتو">
+        <button class="collection-tab active" role="tab" data-group="featured">اختيارات فينيتو</button>
+        <button class="collection-tab" role="tab" data-group="new">وصل حديثاً</button>
+        <button class="collection-tab" role="tab" data-group="bestsellers">الأكثر طلباً</button>
+      </div>
+      <div class="product-grid" id="collection-products"></div>
+      <p class="collection-empty hidden" id="collection-empty">ستظهر تشكيلتنا هنا قريباً.</p>
+    </section>
+
+    <section class="menu-section section-wrap" id="menu">
+      <div class="section-heading">
+        <div><span class="eyebrow eyebrow-dark">من فرننا إلى مائدتكم</span><h2>قائمة <em>فينيـتو</em></h2></div>
+        <p>اختاروا ما تحبّون، واتركوا لنا الباقي.</p>
+      </div>
+      <div class="category-list" id="categories" aria-label="تصنيفات المنتجات"></div>
+      <div class="product-grid" id="products" aria-live="polite">
+        <div class="loading-card">نحضّر لكم القائمة...</div>
+      </div>
+      <div class="menu-empty hidden" id="menu-empty">
+        <span>✳</span><h3>قائمة طازجة قريباً</h3><p>نعمل على تجهيز قائمتنا. زورونا قريباً لتكتشفوا تشكيلتنا.</p>
+      </div>
+    </section>
+
+    <section class="promise-band">
+      <div class="promise-image" role="img" aria-label="مخبوزات طازجة"></div>
+      <div class="promise-copy">
+        <span class="eyebrow">حلوها على أصولها</span>
+        <h2>الطعم الذي<br>يجمع <em>القلوب.</em></h2>
+        <p>صندوق صغير من فينيتو، وابتسامة كبيرة على وجوه من تحبّون.</p>
+        <a class="text-link" href="#menu">تصفّحوا القائمة <span>←</span></a>
+      </div>
+      <span class="promise-number">02<span>/03</span></span>
+    </section>
+
+    <section class="care-section section-wrap">
+      <div class="section-heading">
+        <div><span class="eyebrow eyebrow-dark">لمسات من القلب</span><h2>لأنّ <em>التفاصيل</em> تهمّ</h2></div>
+      </div>
+      <div class="care-grid">
+        <article class="care-card"><span class="care-icon">✳</span><h3>طازج كل يوم</h3><p>نحضّر تشكيلتنا بعناية لتصل إليكم بأجمل مذاق.</p></article>
+        <article class="care-card"><span class="care-icon">♡</span><h3>صُنع بحب</h3><p>من اختيار المكونات إلى ترتيب الصندوق، نهتم بكل تفصيل.</p></article>
+        <article class="care-card"><span class="care-icon">⌂</span><h3>إلى بابكم</h3><p>توصيل داخل بغداد، برسوم واضحة لكل منطقة.</p></article>
+      </div>
+    </section>
+
+    <section class="contact-band" id="contact">
+      <div><span class="eyebrow">نحب أن نسمع منكم</span><h2>لحظتكم القادمة<br><em>أحلى مع فينيتو.</em></h2></div>
+      <div class="contact-details"><p id="contact-address">بغداد، العراق</p><a id="contact-phone" href="#">اتصلوا بنا</a><div class="social-links" id="social-links"></div></div>
+      <span class="contact-sparkle">✳</span>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a class="brand brand-footer" href="/"><span class="brand-mark">V</span><span class="brand-name"><strong>VENITO</strong><small>حلويات ومعجنات فينيتو</small></span></a>
+    <p>حلاوة تصنع لحظاتكم.</p><span>© <span id="year"></span> VENITO</span>
+  </footer>
+
+  <div class="drawer-backdrop hidden" id="drawer-backdrop"></div>
+  <aside class="cart-drawer" id="cart-drawer" aria-label="سلة التسوق" aria-hidden="true">
+    <div class="drawer-heading"><div><span class="eyebrow eyebrow-dark">اختياراتكم</span><h2>سلة التسوق</h2></div><button class="icon-button" id="close-cart" aria-label="إغلاق">×</button></div>
+    <div class="cart-items" id="cart-items"></div>
+    <div class="cart-footer"><div class="total-row"><span>المجموع الفرعي</span><strong id="cart-subtotal">٠ د.ع</strong></div><p>تُحسب أجرة التوصيل عند إتمام الطلب.</p><button class="button button-primary full-width" id="checkout-button">إتمام الطلب <span>←</span></button></div>
+  </aside>
+
+  <dialog class="checkout-dialog" id="checkout-dialog">
+    <form method="dialog" class="dialog-close-row"><button class="icon-button" aria-label="إغلاق">×</button></form>
+    <div class="checkout-content">
+      <span class="eyebrow eyebrow-dark">خطوة واحدة تفصلكم</span><h2>إتمام <em>الطلب</em></h2>
+      <div class="checkout-grid">
+        <form id="checkout-form" class="checkout-form">
+          <label>الاسم الكامل<input name="fullName" required maxlength="120" autocomplete="name" placeholder="الاسم الثلاثي"></label>
+          <label>رقم الهاتف<input name="phone" required inputmode="tel" autocomplete="tel" placeholder="07xxxxxxxxx"></label>
+          <label>المنطقة في بغداد<input id="area-search" type="search" placeholder="اكتبوا اسم المنطقة للبحث" autocomplete="off"></label>
+          <label>اختاروا المنطقة<select name="areaId" id="area-select" required><option value="">اختاروا منطقة التوصيل</option></select></label>
+          <div class="area-fee" id="area-fee">تُعرض أجرة التوصيل بعد اختيار المنطقة.</div>
+          <label>العنوان بالتفصيل<textarea name="address" required maxlength="500" rows="2" placeholder="المحلة، الزقاق، أقرب نقطة دالة"></textarea></label>
+          <label>ملاحظات إضافية <span class="optional">(اختياري)</span><textarea name="instructions" maxlength="500" rows="2" placeholder="أي تفاصيل تساعدنا في التوصيل"></textarea></label>
+          <label>طريقة الدفع<select name="paymentMethod"><option value="cash_on_delivery">نقداً عند الاستلام</option><option value="electronic" disabled>الدفع الإلكتروني — غير متاح حالياً</option></select></label>
+          <p class="closed-note hidden" id="cash-disabled-note">الدفع عند الاستلام غير متاح حالياً. لا يمكن تأكيد الطلب.</p>
+          <div class="form-error hidden" id="checkout-error" role="alert"></div>
+          <button class="button button-primary full-width" type="submit" id="place-order">تأكيد الطلب <span>←</span></button>
+        </form>
+        <div class="checkout-summary"><h3>ملخص طلبكم</h3><div id="checkout-items"></div><div class="total-row"><span>المنتجات</span><strong id="checkout-subtotal">٠ د.ع</strong></div><div class="total-row"><span>التوصيل</span><strong id="checkout-delivery">—</strong></div><div class="total-row grand-total"><span>الإجمالي</span><strong id="checkout-total">—</strong></div><p class="closed-note hidden" id="closed-note">المتجر مغلق الآن. يمكنكم تصفح القائمة، لكن لا يمكن تأكيد الطلب حالياً.</p></div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="success-dialog" id="success-dialog">
+    <div class="success-content"><span class="success-icon">✓</span><span class="eyebrow eyebrow-dark">وصلنا طلبكم</span><h2>شكراً لاختياركم <em>فينيـتو</em></h2><p>رقم طلبكم</p><strong class="order-number" id="confirmed-order-number"></strong><p>الدفع نقداً عند الاستلام. سنتواصل معكم لتأكيد التفاصيل.</p><button class="button button-primary" id="success-done">العودة للقائمة</button></div>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
