@@ -277,6 +277,18 @@ class PlatformTests(unittest.TestCase):
             self.assertTrue(server.store_status(db, datetime(2026, 1, 6, 1, 59, tzinfo=zone)))
             self.assertFalse(server.store_status(db, datetime(2026, 1, 6, 2, 0, tzinfo=zone)))
 
+    def test_working_hours_equal_open_close_is_open_for_that_day(self):
+        with database.connect() as db:
+            db.execute("UPDATE working_hours SET active=0")
+            db.execute(
+                "UPDATE working_hours SET opens_at='12:00',closes_at='12:00',active=1 "
+                "WHERE weekday=0"
+            )
+            zone = ZoneInfo("Asia/Baghdad")
+            self.assertTrue(server.store_status(db, datetime(2026, 1, 5, 0, 0, tzinfo=zone)))
+            self.assertTrue(server.store_status(db, datetime(2026, 1, 5, 23, 59, tzinfo=zone)))
+            self.assertFalse(server.store_status(db, datetime(2026, 1, 6, 12, 0, tzinfo=zone)))
+
     def test_public_pages_and_health_endpoint_are_served(self):
         status, health = self.call("GET", "/api/health")
         self.assertEqual(status, 200)

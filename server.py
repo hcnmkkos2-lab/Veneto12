@@ -74,10 +74,17 @@ def store_status(db, now=None):
     for row in hours:
         if not row["active"]:
             continue
-        opening = int(row["opens_at"][:2]) * 60 + int(row["opens_at"][3:])
-        closing = int(row["closes_at"][:2]) * 60 + int(row["closes_at"][3:])
-        # A closing time at or before opening denotes an overnight schedule.
-        if closing <= opening:
+        opening_text = str(row["opens_at"] or "")
+        closing_text = str(row["closes_at"] or "")
+        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", opening_text):
+            continue
+        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", closing_text):
+            continue
+        opening = int(opening_text[:2]) * 60 + int(opening_text[3:])
+        closing = int(closing_text[:2]) * 60 + int(closing_text[3:])
+        if opening == closing:
+            is_open = weekday == row["weekday"]
+        elif closing < opening:
             is_open = (
                 weekday == row["weekday"] and minute >= opening
             ) or (

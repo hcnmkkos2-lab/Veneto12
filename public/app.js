@@ -327,7 +327,19 @@ function applyLanguage(language) {
 async function renderStoreFromCurrentState() {
   try {
     renderStore(await api("/api/store"));
-  } catch (_) {}
+  } catch (_) {
+    markStoreStatusUnavailable();
+  }
+}
+
+function markStoreStatusUnavailable() {
+  state.storeOpen = false;
+  $("#store-status").textContent = "تعذر التحقق من حالة المتجر";
+  $("#announcement").classList.add("is-closed");
+  $("#store-status-badge").classList.add("is-closed");
+  $("#store-status-badge-text").textContent = "تعذر التحقق من الحالة";
+  $("#place-order").disabled = true;
+  $("#closed-note").classList.remove("hidden");
 }
 
 async function init() {
@@ -346,6 +358,7 @@ async function init() {
     await Promise.all([loadProducts(), loadCart(), loadAreas(), loadCollections()]);
   } catch (error) {
     toast(error.message);
+    markStoreStatusUnavailable();
   }
 
   $("#categories").addEventListener("click", (event) => {
@@ -540,6 +553,7 @@ async function init() {
       renderStore(await api("/api/store"));
       await loadCollections();
     } catch (error) {
+      markStoreStatusUnavailable();
       toast(`تعذر تحديث حالة المتجر: ${error.message}`);
     }
   }, 60_000);
