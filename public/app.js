@@ -19,6 +19,19 @@ const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
 }[char]));
 let toastTimer;
+let notificationTimer;
+
+function showNotification(message) {
+  const island = $("#notification-island");
+  $("#notification-island-copy").textContent = message;
+  island.classList.add("visible");
+  island.setAttribute("aria-hidden", "false");
+  clearTimeout(notificationTimer);
+  notificationTimer = setTimeout(() => {
+    island.classList.remove("visible");
+    island.setAttribute("aria-hidden", "true");
+  }, 3800);
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -232,6 +245,10 @@ function renderStore(data) {
   const status = $("#store-status");
   status.textContent = data.storeStatus;
   $("#announcement").classList.toggle("is-closed", !data.isOpen);
+  $("#store-status-badge").classList.toggle("is-closed", !data.isOpen);
+  $("#store-status-badge-text").textContent = data.isOpen
+    ? (document.documentElement.lang === "en" ? "Open now" : "مفتوح الآن")
+    : (document.documentElement.lang === "en" ? "Closed now" : "مغلق الآن");
   const settings = data.settings || {};
   state.cashPaymentEnabled = settings.payment_cash_enabled !== "0";
   $("#cash-disabled-note").classList.toggle("hidden", state.cashPaymentEnabled);
@@ -275,8 +292,52 @@ function renderStore(data) {
 }
 
 let searchTimer;
+
+function applyLanguage(language) {
+  const isEnglish = language === "en";
+  document.documentElement.lang = isEnglish ? "en" : "ar";
+  document.documentElement.dir = isEnglish ? "ltr" : "rtl";
+  localStorage.setItem("venito-language", language);
+  $("#language-toggle").textContent = isEnglish ? "ع" : "EN";
+  $("#language-toggle").setAttribute("aria-label", isEnglish ? "Switch to Arabic" : "Switch to English");
+  $("#product-search").placeholder = isEnglish ? "What are you craving?" : "ماذا تشتهي؟";
+  $("#open-cart").querySelector("span:nth-child(2)").textContent = isEnglish ? "Cart" : "السلة";
+  $("#open-cart").setAttribute("aria-label", isEnglish ? "Shopping cart" : "سلة التسوق");
+  $("#order-now-label").textContent = isEnglish ? "Order now" : "اطلب الآن";
+  $("#notification-view-cart").textContent = isEnglish ? "View cart" : "عرض السلة";
+  document.querySelectorAll("#main-nav a").forEach((link, index) => {
+    link.textContent = isEnglish
+      ? ["Home", "Menu", "Our story", "Contact us"][index]
+      : ["الرئيسية", "قائمة الطعام", "حكايتنا", "تواصل معنا"][index];
+  });
+  const heroHeading = document.querySelector(".hero h1");
+  const heroText = document.querySelector(".hero-content > p");
+  if (isEnglish) {
+    heroHeading.innerHTML = "Sweet moments<br>start <em>here</em>";
+    heroText.textContent = "From the first creamy layer to the last crumb... we make every piece with love.";
+  } else {
+    heroHeading.innerHTML = "لحظاتكم الحلوة<br>تبدأ <em>من هنا</em>";
+    heroText.textContent = "من أول طبقة كريمة إلى آخر فتاتة... نصنع كل قطعة بحب لتكون ذكرى لا تُنسى.";
+  }
+  const menuButton = document.querySelector(".hero-actions .button-light");
+  if (menuButton) menuButton.innerHTML = isEnglish ? "Explore our menu <span>←</span>" : "اكتشفوا قائمتنا <span>←</span>";
+  renderStoreFromCurrentState();
+}
+
+async function renderStoreFromCurrentState() {
+  try {
+    renderStore(await api("/api/store"));
+  } catch (_) {}
+}
+
 async function init() {
   $("#year").textContent = new Date().getFullYear();
+  const savedTheme = localStorage.getItem("venito-theme") || "light";
+  document.documentElement.dataset.theme = savedTheme;
+  $("#theme-toggle").setAttribute("aria-pressed", String(savedTheme === "dark"));
+  $("#theme-toggle").setAttribute("aria-label", savedTheme === "dark" ? "تفعيل الوضع النهاري" : "تفعيل الوضع الليلي");
+  $("#theme-toggle").innerHTML = `<span aria-hidden="true">${savedTheme === "dark" ? "☀" : "☾"}</span>`;
+  applyLanguage(localStorage.getItem("venito-language") === "en" ? "en" : "ar");
   try {
     const [store, categories] = await Promise.all([api("/api/store"), api("/api/categories")]);
     renderStore(store);
@@ -347,7 +408,11 @@ async function init() {
     }
     try {
       await saveCart();
-      toast("أُضيف إلى السلة بكل حب.");
+      const message = document.documentElement.lang === "en"
+        ? `${selectedProduct.name_ar} was added to the cart.`
+        : `تمت إضافة ${selectedProduct.name_ar} إلى السلة`;
+      showNotification(message);
+      toast(document.documentElement.lang === "en" ? "Added to cart." : "أُضيف إلى السلة بكل حب.");
     } catch (error) {
       toast(error.message);
     }
@@ -362,6 +427,30 @@ async function init() {
     }, 250);
   });
   $("#open-cart").addEventListener("click", openCart);
+  $("#language-toggle").addEventListener("click", () => {
+    applyLanguage(document.documentElement.lang === "ar" ? "en" : "ar");
+  });
+  $("#theme-toggle").addEventListener("click", () => {
+    const dark = document.documentElement.dataset.theme !== "dark";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    localStorage.setItem("venito-theme", dark ? "dark" : "light");
+    $("#theme-toggle").setAttribute("aria-pressed", String(dark));
+    $("#theme-toggle").setAttribute("aria-label", dark ? "تفعيل الوضع النهاري" : "تفعيل الوضع الليلي");
+    $("#theme-toggle").innerHTML = `<span aria-hidden="true">${dark ? "☀" : "☾"}</span>`;
+  });
+  $("#order-now").addEventListener("click", () => {
+    if (cartCount() === 0) {
+      document.querySelector("#menu").scrollIntoView({ behavior: "smooth" });
+      toast(document.documentElement.lang === "en" ? "Choose something delicious." : "اختاروا شيئاً لذيذاً.");
+    } else {
+      openCart();
+    }
+  });
+  $("#notification-view-cart").addEventListener("click", () => {
+    $("#notification-island").classList.remove("visible");
+    $("#notification-island").setAttribute("aria-hidden", "true");
+    openCart();
+  });
   $("#close-cart").addEventListener("click", closeCart);
   $("#drawer-backdrop").addEventListener("click", closeCart);
   $("#cart-items").addEventListener("click", async (event) => {

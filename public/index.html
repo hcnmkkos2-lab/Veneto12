@@ -35,6 +35,8 @@
       <button class="cart-button" id="open-cart" aria-label="سلة التسوق">
         <span aria-hidden="true">▱</span><span>السلة</span><b id="cart-count">0</b>
       </button>
+      <button class="header-utility-button" id="language-toggle" type="button" aria-label="تغيير اللغة" title="تغيير اللغة">AR</button>
+      <button class="header-utility-button" id="theme-toggle" type="button" aria-label="تفعيل الوضع الليلي" title="الوضع الليلي" aria-pressed="false"><span aria-hidden="true">☾</span></button>
     </div>
   </header>
 
@@ -52,6 +54,16 @@
         </div>
       </div>
       <div class="hero-stamp"><span>BAKED<br>WITH LOVE</span><b>✳</b></div>
+      <div class="store-status-badge" id="store-status-badge" role="status">
+        <span class="store-status-dot"></span>
+        <span id="store-status-badge-text">نتحقق من أوقات العمل...</span>
+      </div>
+      <div class="order-island" aria-label="جزيرة الطلب السريع">
+        <button class="order-island-button" id="order-now" type="button">
+          <span id="order-now-label">اطلب الآن</span>
+          <span aria-hidden="true">←</span>
+        </button>
+      </div>
       <div class="hero-bottom"><span>01 — 03</span><span class="hero-line"></span><span>صُنع بشغف في بغداد</span></div>
     </section>
 
@@ -156,6 +168,11 @@
   <dialog class="success-dialog" id="success-dialog">
     <div class="success-content"><span class="success-icon">✓</span><span class="eyebrow eyebrow-dark">وصلنا طلبكم</span><h2>شكراً لاختياركم <em>فينيـتو</em></h2><p>رقم طلبكم</p><strong class="order-number" id="confirmed-order-number"></strong><p>الدفع نقداً عند الاستلام. سنتواصل معكم لتأكيد التفاصيل.</p><button class="button button-primary" id="success-done">العودة للقائمة</button></div>
   </dialog>
+  <aside class="notification-island" id="notification-island" role="status" aria-live="polite" aria-hidden="true">
+    <span class="notification-island-icon" aria-hidden="true">✓</span>
+    <span class="notification-island-copy" id="notification-island-copy">تمت الإضافة إلى السلة</span>
+    <button class="notification-island-action" id="notification-view-cart" type="button">عرض السلة</button>
+  </aside>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
