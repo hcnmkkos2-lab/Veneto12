@@ -14,8 +14,6 @@
 </head>
 <body>
   <div class="announcement" id="announcement">
-    <span class="status-dot"></span><span id="store-status">نتحقق من أوقات العمل...</span>
-    <span class="announcement-separator">•</span>
     <span>طازج كل يوم، بحب من فينيتو</span>
   </div>
   <header class="site-header">
@@ -28,15 +26,15 @@
       <a href="#home">الرئيسية</a><a href="#menu">قائمة الطعام</a><a href="#story">حكايتنا</a><a href="#contact">تواصل معنا</a>
     </nav>
     <div class="header-actions">
+      <button class="cart-button" id="open-cart" aria-label="سلة التسوق">
+        <span aria-hidden="true">▱</span><span>السلة</span><b id="cart-count">0</b>
+      </button>
+      <button class="header-utility-button" id="theme-toggle" type="button" aria-label="تفعيل الوضع الليلي" title="الوضع الليلي" aria-pressed="false"><span aria-hidden="true">☾</span></button>
+      <button class="header-utility-button" id="language-toggle" type="button" aria-label="تغيير اللغة" title="تغيير اللغة">AR</button>
       <label class="search-box" aria-label="ابحث عن منتج">
         <span aria-hidden="true">⌕</span>
         <input id="product-search" type="search" placeholder="ماذا تشتهي؟" autocomplete="off">
       </label>
-      <button class="cart-button" id="open-cart" aria-label="سلة التسوق">
-        <span aria-hidden="true">▱</span><span>السلة</span><b id="cart-count">0</b>
-      </button>
-      <button class="header-utility-button" id="language-toggle" type="button" aria-label="تغيير اللغة" title="تغيير اللغة">AR</button>
-      <button class="header-utility-button" id="theme-toggle" type="button" aria-label="تفعيل الوضع الليلي" title="الوضع الليلي" aria-pressed="false"><span aria-hidden="true">☾</span></button>
     </div>
   </header>
 

@@ -409,10 +409,9 @@ async function init() {
     try {
       await saveCart();
       const message = document.documentElement.lang === "en"
-        ? `${selectedProduct.name_ar} was added to the cart.`
-        : `تمت إضافة ${selectedProduct.name_ar} إلى السلة`;
+        ? `${selectedProduct.name_ar} was added to the cart successfully`
+        : `تمت إضافة ${selectedProduct.name_ar} إلى السلة بنجاح`;
       showNotification(message);
-      toast(document.documentElement.lang === "en" ? "Added to cart." : "أُضيف إلى السلة بكل حب.");
     } catch (error) {
       toast(error.message);
     }
