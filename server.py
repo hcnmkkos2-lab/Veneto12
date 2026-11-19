@@ -129,6 +129,14 @@ def row_dict(row):
     return dict(row) if row is not None else None
 
 
+def order_dict(row):
+    result = row_dict(row)
+    if result and not result.get("delivery_fee_determined", 1):
+        result["delivery_fee_iqd"] = None
+        result["total_iqd"] = None
+    return result
+
+
 class VenitoHandler(BaseHTTPRequestHandler):
     server_version = "VENITO/1.0"
 
@@ -479,8 +487,6 @@ class VenitoHandler(BaseHTTPRequestHandler):
             ).fetchone()
             if not area:
                 fail("منطقة التوصيل غير متاحة حالياً.", 409)
-            if area["fee_iqd"] is None:
-                fail("لم تُحدد أجرة التوصيل لهذه المنطقة بعد. يرجى اختيار منطقة أخرى.", 409)
             cart_id, _ = self._cart(db, create=False)
             if not cart_id:
                 fail("سلة التسوق فارغة.", 409)
@@ -520,12 +526,12 @@ class VenitoHandler(BaseHTTPRequestHandler):
             order_number = "VN-" + datetime.now(TIMEZONE).strftime("%y%m%d") + "-" + secrets.token_hex(3).upper()
             cursor = db.execute(
                 "INSERT INTO orders (order_number,customer_id,delivery_area_id,delivery_area_name,"
-                "delivery_district,delivery_address,delivery_instructions,delivery_fee_iqd,subtotal_iqd,"
-                "total_iqd,status,payment_method,payment_status,created_at,updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,'new','cash_on_delivery','pending',?,?)",
+                "delivery_district,delivery_address,delivery_instructions,delivery_fee_iqd,"
+                "delivery_fee_determined,subtotal_iqd,total_iqd,status,payment_method,payment_status,"
+                "created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,'new','cash_on_delivery','pending',?,?)",
                 (order_number, customer_id, area["id"], area["name_ar"], area["district"],
-                 address, instructions, area["fee_iqd"], subtotal,
-                 subtotal + area["fee_iqd"], now, now),
+                 address, instructions, area["fee_iqd"] or 0, int(area["fee_iqd"] is not None),
+                 subtotal, subtotal + (area["fee_iqd"] or 0), now, now),
             )
             order_id = cursor.lastrowid
             db.executemany(
@@ -534,11 +540,12 @@ class VenitoHandler(BaseHTTPRequestHandler):
                 ((order_id, item["product_id"], item["name_ar"], item["variant_name"] or "",
                   item["quantity"], price, line_total) for item, price, line_total in order_items),
             )
-            db.execute(
-                "INSERT INTO payment_transactions (order_id,provider,amount_iqd,status,created_at,updated_at) "
-                "VALUES (?,'cash_on_delivery',?,'pending',?,?)",
-                (order_id, subtotal + area["fee_iqd"], now, now),
-            )
+            if area["fee_iqd"] is not None:
+                db.execute(
+                    "INSERT INTO payment_transactions (order_id,provider,amount_iqd,status,created_at,updated_at) "
+                    "VALUES (?,'cash_on_delivery',?,'pending',?,?)",
+                    (order_id, subtotal + area["fee_iqd"], now, now),
+                )
             db.execute(
                 "INSERT INTO order_status_history (order_id,status,created_at) VALUES (?,'new',?)",
                 (order_id, now),
@@ -552,7 +559,9 @@ class VenitoHandler(BaseHTTPRequestHandler):
         return self._json(201, {
             "orderNumber": order_number, "status": "new",
             "subtotal": subtotal, "deliveryFee": area["fee_iqd"],
-            "total": subtotal + area["fee_iqd"], "paymentStatus": "pending",
+            "total": subtotal + area["fee_iqd"] if area["fee_iqd"] is not None else None,
+            "deliveryFeeDetermined": area["fee_iqd"] is not None,
+            "paymentStatus": "pending",
         })
 
     def _login(self):
@@ -670,12 +679,13 @@ class VenitoHandler(BaseHTTPRequestHandler):
             }
             totals = db.execute(
                 "SELECT COUNT(*) AS order_count,COALESCE(SUM(CASE WHEN status!='cancelled' "
-                "THEN total_iqd ELSE 0 END),0) AS sales FROM orders "
+                "THEN CASE WHEN delivery_fee_determined=1 THEN total_iqd ELSE subtotal_iqd END "
+                "ELSE 0 END),0) AS sales FROM orders "
                 "WHERE date(created_at,'+3 hours')=?",
                 (today,),
             ).fetchone()
-            recent = [row_dict(r) for r in db.execute(
-                "SELECT o.order_number,o.status,o.total_iqd,o.created_at,c.full_name "
+            recent = [order_dict(r) for r in db.execute(
+                "SELECT o.order_number,o.status,o.total_iqd,o.delivery_fee_determined,o.created_at,c.full_name "
                 " ,o.id "
                 "FROM orders o JOIN customers c ON c.id=o.customer_id "
                 "ORDER BY o.id DESC LIMIT 8"
@@ -905,7 +915,7 @@ class VenitoHandler(BaseHTTPRequestHandler):
                     "SELECT o.*,c.full_name,c.phone FROM orders o JOIN customers c ON c.id=o.customer_id"
                     + where + " ORDER BY o.id DESC LIMIT 300", params
                 ).fetchall()
-                return self._json(200, [row_dict(r) for r in rows])
+                return self._json(200, [order_dict(r) for r in rows])
             if len(ids) < 1:
                 fail("رقم الطلب مطلوب.", 400)
             if ids[0] == "print" and len(ids) == 2 and method == "POST":
@@ -920,7 +930,7 @@ class VenitoHandler(BaseHTTPRequestHandler):
                 ).fetchone()
                 if not order:
                     fail("الطلب غير موجود.", 404)
-                result = row_dict(order)
+                result = order_dict(order)
                 result["items"] = [row_dict(r) for r in db.execute(
                     "SELECT * FROM order_items WHERE order_id=? ORDER BY id", (order_id,)
                 )]
@@ -964,7 +974,9 @@ class VenitoHandler(BaseHTTPRequestHandler):
                 params = [f"%{search}%", f"%{search}%"]
             rows = db.execute(
                 "SELECT c.id,c.full_name,c.phone,c.created_at,COUNT(o.id) AS order_count,"
-                "COALESCE(SUM(CASE WHEN o.status!='cancelled' THEN o.total_iqd ELSE 0 END),0) AS total_spent "
+                "COALESCE(SUM(CASE WHEN o.status!='cancelled' THEN "
+                "CASE WHEN o.delivery_fee_determined=1 THEN o.total_iqd ELSE o.subtotal_iqd END "
+                "ELSE 0 END),0) AS total_spent "
                 "FROM customers c LEFT JOIN orders o ON o.customer_id=c.id " + where
                 + " GROUP BY c.id ORDER BY c.id DESC LIMIT 300", params
             )
@@ -1047,7 +1059,9 @@ class VenitoHandler(BaseHTTPRequestHandler):
         with database.connect() as db:
             daily = [row_dict(r) for r in db.execute(
                 "SELECT date(created_at,'+3 hours') AS day,COUNT(*) AS orders,"
-                "COALESCE(SUM(CASE WHEN status!='cancelled' THEN total_iqd ELSE 0 END),0) AS sales "
+                "COALESCE(SUM(CASE WHEN status!='cancelled' THEN "
+                "CASE WHEN delivery_fee_determined=1 THEN total_iqd ELSE subtotal_iqd END "
+                "ELSE 0 END),0) AS sales "
                 "FROM orders WHERE created_at>=? GROUP BY date(created_at,'+3 hours') ORDER BY day DESC", (since,)
             )]
             best_sellers = [row_dict(r) for r in db.execute(
@@ -1058,7 +1072,8 @@ class VenitoHandler(BaseHTTPRequestHandler):
             summary = row_dict(db.execute(
                 "SELECT COUNT(*) AS orders,"
                 "COALESCE(SUM(CASE WHEN status!='cancelled' THEN subtotal_iqd ELSE 0 END),0) AS sales,"
-                "COALESCE(SUM(CASE WHEN status!='cancelled' THEN delivery_fee_iqd ELSE 0 END),0) AS delivery_fees,"
+                "COALESCE(SUM(CASE WHEN status!='cancelled' AND delivery_fee_determined=1 "
+                "THEN delivery_fee_iqd ELSE 0 END),0) AS delivery_fees,"
                 "SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS cancelled "
                 "FROM orders WHERE created_at>=?", (since,)
             ).fetchone())
@@ -1200,8 +1215,10 @@ class VenitoHandler(BaseHTTPRequestHandler):
             receipt += [
                 "------------------------------",
                 f"المجموع: {order['subtotal_iqd']:,} د.ع",
-                f"التوصيل: {order['delivery_fee_iqd']:,} د.ع",
-                f"الإجمالي: {order['total_iqd']:,} د.ع",
+                f"التوصيل: {order['delivery_fee_iqd']:,} د.ع"
+                if order["delivery_fee_determined"] else "التوصيل: يحدد لاحقاً",
+                f"الإجمالي: {order['total_iqd']:,} د.ع"
+                if order["delivery_fee_determined"] else "الإجمالي: يحدد لاحقاً",
                 "الدفع: عند الاستلام",
             ]
             if order["delivery_instructions"]:

@@ -147,6 +147,9 @@ a{color:inherit;text-decoration:none}
 .drawer-heading h2{font-size:23px;margin:5px 0 0;font-weight:500}
 .icon-button{width:38px;height:38px;background:transparent;border:1px solid #d9ccbd;font-size:24px;color:var(--coffee);display:grid;place-items:center}
 .cart-items{overflow:auto;flex:1;padding:13px 0}
+.cart-delivery{display:grid;gap:7px;padding:12px 0;border-top:1px solid var(--line);font-size:11px;color:#6b594c}
+.cart-delivery input,.cart-delivery select{width:100%;border:1px solid #dfd4c8;background:#fffdf9;padding:9px 10px;color:var(--ink);outline:none;font-size:12px}
+.cart-delivery input:focus,.cart-delivery select:focus{border-color:#a97557}
 .empty-cart{text-align:center;color:var(--muted);font-size:12px;padding:45px 10px}
 .cart-item{display:grid;grid-template-columns:1fr auto;gap:12px;padding:14px 0;border-bottom:1px solid #eee4d8}
 .cart-item h3{font-size:13px;font-weight:500;margin:0 0 5px}
@@ -255,6 +258,7 @@ html[data-theme="dark"] .notification-island-action{background:#ad684b}
   .cart-drawer{width:min(440px,92vw)}
   input,select,textarea{font-size:16px}
   .checkout-form input,.checkout-form select,.checkout-form textarea{font-size:16px}
+  .cart-delivery input,.cart-delivery select{font-size:16px}
 }
 @media(max-width:480px){
   .announcement{height:32px;padding-inline:8px;text-align:center}

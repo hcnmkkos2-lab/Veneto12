@@ -47,7 +47,6 @@ class PlatformTests(unittest.TestCase):
             db.execute("DELETE FROM customers")
             db.execute("DELETE FROM carts")
             db.execute("DELETE FROM products")
-            db.execute("DELETE FROM delivery_areas")
             db.execute("DELETE FROM admin_sessions")
             db.execute("UPDATE working_hours SET opens_at='12:00',closes_at='02:00',active=1")
             db.execute(
@@ -151,20 +150,47 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(updated["status"], "preparing")
         self.assertEqual(len(updated["history"]), 2)
 
-    def test_checkout_rejects_missing_delivery_fee_closed_store_and_electronic_payment(self):
+    def test_checkout_saves_unknown_fee_without_charging_and_rejects_closed_store(self):
         product_id, area_id = self.create_product_and_area(fee=None)
         self.fill_cart(product_id)
         with mock.patch.object(server, "store_status", return_value=True):
-            status, response = self.call("POST", "/api/orders", {
+            status, order = self.call("POST", "/api/orders", {
                 "fullName": "سارة أحمد", "phone": "07812345678",
                 "areaId": area_id, "address": "عنوان",
             })
-        self.assertEqual(status, 409)
-        self.assertIn("أجرة التوصيل", response["error"])
+        self.assertEqual(status, 201)
+        self.assertEqual(order["subtotal"], 24000)
+        self.assertIsNone(order["deliveryFee"])
+        self.assertIsNone(order["total"])
+        self.assertFalse(order["deliveryFeeDetermined"])
+        with database.connect() as db:
+            saved = db.execute(
+                "SELECT id,delivery_fee_iqd,delivery_fee_determined,subtotal_iqd,total_iqd "
+                "FROM orders WHERE order_number=?", (order["orderNumber"],)
+            ).fetchone()
+            self.assertEqual(saved["delivery_fee_iqd"], 0)
+            self.assertEqual(saved["delivery_fee_determined"], 0)
+            self.assertEqual(saved["total_iqd"], saved["subtotal_iqd"])
+            self.assertEqual(db.execute(
+                "SELECT COUNT(*) FROM payment_transactions WHERE order_id=?", (saved["id"],)
+            ).fetchone()[0], 0)
+        status, admin_order = self.call("GET", f"/api/admin/orders/{saved['id']}")
+        self.assertEqual(status, 200)
+        self.assertIsNone(admin_order["delivery_fee_iqd"])
+        self.assertIsNone(admin_order["total_iqd"])
+        status, admin_orders = self.call("GET", "/api/admin/orders")
+        self.assertEqual(status, 200)
+        self.assertIsNone(admin_orders[0]["delivery_fee_iqd"])
+        self.assertIsNone(admin_orders[0]["total_iqd"])
+        status, report = self.call("GET", "/api/admin/reports?period=day")
+        self.assertEqual(status, 200)
+        self.assertEqual(report["summary"]["sales"], 24000)
+        self.assertEqual(report["summary"]["delivery_fees"], 0)
         status, _ = self.call("PUT", f"/api/admin/areas/{area_id}", {
             "name": "المنصور", "district": "karkh", "fee": 1000,
         })
         self.assertEqual(status, 200)
+        self.fill_cart(product_id)
         with mock.patch.object(server, "store_status", return_value=False):
             status, response = self.call("POST", "/api/orders", {
                 "fullName": "سارة أحمد", "phone": "07812345678",
@@ -179,6 +205,19 @@ class PlatformTests(unittest.TestCase):
             })
         self.assertEqual(status, 409)
         self.assertIn("غير متاح", response["error"])
+
+    def test_baghdad_delivery_areas_have_only_the_specified_fees(self):
+        status, areas = self.call("GET", "/api/areas")
+        self.assertEqual(status, 200)
+        fees = {area["name_ar"]: area["fee_iqd"] for area in areas}
+        self.assertEqual(fees["مدينة الصدر"], 2000)
+        self.assertEqual(fees["البنوك"], 1000)
+        self.assertEqual(fees["الشعب"], 1000)
+        self.assertEqual(fees["باب المعظم"], 3000)
+        self.assertGreaterEqual(sum(area["district"] == "karkh" for area in areas), 20)
+        self.assertGreaterEqual(sum(area["district"] == "rusafa" for area in areas), 25)
+        for name in ("الحرية", "المنصور", "حي أور", "الشرطة الرابعة", "الشرطة الثانية", "الغزالية"):
+            self.assertIsNone(fees[name])
 
     def test_admin_mutations_require_csrf_token(self):
         status, response = self.call(

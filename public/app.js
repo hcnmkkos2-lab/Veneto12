@@ -10,6 +10,7 @@ const state = {
   storeOpen: false,
   storeStatusAvailable: false,
   cashPaymentEnabled: true,
+  selectedAreaId: localStorage.getItem("venito_delivery_area") || "",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -126,7 +127,8 @@ function cartSubtotal() {
 function renderCart() {
   $("#cart-count").textContent = cartCount().toLocaleString("ar-IQ");
   $("#cart-subtotal").textContent = money(cartSubtotal());
-  $("#checkout-button").disabled = state.cart.length === 0 || !state.storeOpen;
+  $("#checkout-button").disabled = state.cart.length === 0 || !state.storeOpen
+    || !state.areas.some((area) => String(area.id) === state.selectedAreaId);
   if (!state.cart.length) {
     $("#cart-items").innerHTML = '<div class="empty-cart">سلتكم بانتظار شيء لذيذ ✳</div>';
   } else {
@@ -143,6 +145,7 @@ function renderCart() {
         </div><strong class="cart-item-price">${money(item.lineTotal)}</strong>
       </article>`).join("");
   }
+  updateDelivery();
 }
 
 async function loadCart() {
@@ -192,43 +195,62 @@ async function loadAreas() {
 }
 
 function filterAreas() {
-  const select = $("#area-select");
-  const query = $("#area-search").value.trim();
-  const selected = select.value;
-  const areas = state.areas.filter((area) => area.name_ar.includes(query));
-  select.innerHTML = '<option value="">اختاروا منطقة التوصيل</option>' +
-    ["karkh", "rusafa"].map((district) => {
-      const options = areas.filter((area) => area.district === district);
-      if (!options.length) return "";
-      return `<optgroup label="${district === "karkh" ? "الكرخ" : "الرصافة"}">${options.map((area) =>
-        `<option value="${area.id}" data-fee="${area.fee_iqd ?? ""}">${esc(area.name_ar)}${area.fee_iqd == null ? " — أجرة التوصيل غير محددة" : ""}</option>`
-      ).join("")}</optgroup>`;
-    }).join("");
-  if (selected && areas.some((area) => String(area.id) === selected)) select.value = selected;
+  const renderSelect = (selectId, searchId) => {
+    const select = $(selectId);
+    const query = $(searchId).value.trim();
+    const areas = state.areas.filter((area) => area.name_ar.includes(query)
+      || String(area.id) === state.selectedAreaId);
+    select.innerHTML = '<option value="">اختاروا منطقة التوصيل</option>' +
+      ["karkh", "rusafa"].map((district) => {
+        const options = areas.filter((area) => area.district === district);
+        if (!options.length) return "";
+        return `<optgroup label="${district === "karkh" ? "الكرخ" : "الرصافة"}">${options.map((area) =>
+          `<option value="${area.id}">${esc(area.name_ar)}${area.fee_iqd == null ? " — يحدد لاحقاً" : ` — ${esc(money(area.fee_iqd))}`}</option>`
+        ).join("")}</optgroup>`;
+      }).join("");
+    select.value = state.selectedAreaId;
+  };
+  renderSelect("#area-select", "#area-search");
+  renderSelect("#area-select-cart", "#area-search-cart");
   updateDelivery();
 }
 
 function updateDelivery() {
-  const select = $("#area-select");
-  const area = state.areas.find((item) => String(item.id) === select.value);
+  const area = state.areas.find((item) => String(item.id) === state.selectedAreaId);
   const feeNode = $("#area-fee");
+  const cartFeeNode = $("#area-fee-cart");
+  const cartDelivery = $("#cart-delivery-total");
+  const cartTotal = $("#cart-total");
   const delivery = $("#checkout-delivery");
   const total = $("#checkout-total");
   if (!area) {
     feeNode.textContent = "تُعرض أجرة التوصيل بعد اختيار المنطقة.";
+    cartFeeNode.textContent = "اختاروا منطقة لعرض أجرة التوصيل.";
+    cartDelivery.textContent = "—";
+    cartTotal.textContent = "—";
     delivery.textContent = "—";
     total.textContent = "—";
+    $("#checkout-button").disabled = state.cart.length === 0 || !state.storeOpen
+      || !state.areas.some((item) => String(item.id) === state.selectedAreaId);
     return;
   }
   if (area.fee_iqd == null) {
-    feeNode.textContent = "لم تُحدد أجرة التوصيل لهذه المنطقة. اختاروا منطقة أخرى.";
-    delivery.textContent = "غير محددة";
-    total.textContent = "—";
+    feeNode.textContent = `${area.name_ar} — أجرة التوصيل: يحدد لاحقاً.`;
+    cartFeeNode.textContent = `${area.name_ar} — أجرة التوصيل: يحدد لاحقاً.`;
+    cartDelivery.textContent = "يحدد لاحقاً";
+    cartTotal.textContent = "يحدد لاحقاً";
+    delivery.textContent = "يحدد لاحقاً";
+    total.textContent = "يحدد لاحقاً";
+    $("#checkout-button").disabled = state.cart.length === 0 || !state.storeOpen;
     return;
   }
-  feeNode.textContent = `أجرة التوصيل: ${money(area.fee_iqd)}`;
+  feeNode.textContent = `${area.name_ar} — أجرة التوصيل: ${money(area.fee_iqd)}`;
+  cartFeeNode.textContent = `${area.name_ar} — أجرة التوصيل: ${money(area.fee_iqd)}`;
+  cartDelivery.textContent = money(area.fee_iqd);
+  cartTotal.textContent = money(cartSubtotal() + area.fee_iqd);
   delivery.textContent = money(area.fee_iqd);
   total.textContent = money(cartSubtotal() + area.fee_iqd);
+  $("#checkout-button").disabled = state.cart.length === 0 || !state.storeOpen;
 }
 
 function renderCheckoutSummary() {
@@ -237,7 +259,8 @@ function renderCheckoutSummary() {
   `).join("");
   $("#checkout-subtotal").textContent = money(cartSubtotal());
   $("#closed-note").classList.toggle("hidden", state.storeOpen);
-  $("#place-order").disabled = !state.storeOpen || !state.cashPaymentEnabled || !state.cart.length;
+  $("#place-order").disabled = !state.storeOpen || !state.cashPaymentEnabled || !state.cart.length
+    || !state.areas.some((area) => String(area.id) === state.selectedAreaId);
   updateDelivery();
 }
 
@@ -500,7 +523,17 @@ async function init() {
     }
   });
   $("#area-search").addEventListener("input", filterAreas);
-  $("#area-select").addEventListener("change", updateDelivery);
+  $("#area-search-cart").addEventListener("input", filterAreas);
+  const selectArea = (event) => {
+    state.selectedAreaId = event.currentTarget.value;
+    if (state.selectedAreaId) localStorage.setItem("venito_delivery_area", state.selectedAreaId);
+    else localStorage.removeItem("venito_delivery_area");
+    filterAreas();
+    renderCart();
+    renderCheckoutSummary();
+  };
+  $("#area-select").addEventListener("change", selectArea);
+  $("#area-select-cart").addEventListener("change", selectArea);
   $("#checkout-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -508,7 +541,7 @@ async function init() {
     const payload = Object.fromEntries(values.entries());
     payload.areaId = Number(payload.areaId);
     const area = state.areas.find((item) => item.id === payload.areaId);
-    if (!area || area.fee_iqd == null) return toast("اختاروا منطقة توصيل فعالة برسوم محددة.");
+    if (!area) return toast("اختاروا منطقة توصيل فعالة.");
     const submit = $("#place-order");
     submit.disabled = true;
     submit.textContent = "جارٍ تأكيد الطلب...";
@@ -517,17 +550,24 @@ async function init() {
       const order = await api("/api/orders", { method: "POST", body: JSON.stringify(payload) });
       $("#checkout-dialog").close();
       $("#confirmed-order-number").textContent = order.orderNumber;
+      $("#success-delivery-note").textContent = order.deliveryFeeDetermined
+        ? "الدفع نقداً عند الاستلام. سنتواصل معكم لتأكيد التفاصيل."
+        : "تم استلام طلبكم. أجرة التوصيل لهذه المنطقة يحدد لاحقاً، وسنتواصل معكم قبل التسليم.";
       $("#success-dialog").showModal();
       await loadCart();
       renderCart();
       form.reset();
+      state.selectedAreaId = "";
+      localStorage.removeItem("venito_delivery_area");
       $("#area-search").value = "";
+      $("#area-search-cart").value = "";
       filterAreas();
     } catch (error) {
       $("#checkout-error").textContent = error.message;
       $("#checkout-error").classList.remove("hidden");
     } finally {
-      submit.disabled = !state.storeOpen || !state.cashPaymentEnabled;
+      submit.disabled = !state.storeOpen || !state.cashPaymentEnabled || !state.cart.length
+        || !state.areas.some((area) => String(area.id) === state.selectedAreaId);
       submit.innerHTML = 'تأكيد الطلب <span>←</span>';
     }
   });

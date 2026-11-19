@@ -1,6 +1,6 @@
 const adminState = { csrf: "", user: null, products: [], categories: [], areas: [], orders: [] };
 const $$ = (selector) => document.querySelector(selector);
-const formatMoney = (value) => `${Number(value || 0).toLocaleString("ar-IQ")} د.ع`;
+const formatMoney = (value) => value == null ? "يحدد لاحقاً" : `${Number(value).toLocaleString("ar-IQ")} د.ع`;
 const escapeHTML = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
 }[char]));
@@ -144,7 +144,7 @@ async function loadAreas() {
   $$("#rusafa-count").textContent = `${adminState.areas.filter((area) => area.district === "rusafa").length} منطقة`;
   $$("#areas-table").innerHTML = adminState.areas.length ? adminState.areas.map((area) => `
     <tr><td>${escapeHTML(area.name_ar)}</td><td>${area.district === "karkh" ? "الكرخ" : "الرصافة"}</td>
-    <td>${area.fee_iqd == null ? '<span class="status-pill status-cancelled">غير محددة</span>' : formatMoney(area.fee_iqd)}</td>
+    <td>${area.fee_iqd == null ? '<span class="status-pill status-cancelled">يحدد لاحقاً</span>' : formatMoney(area.fee_iqd)}</td>
     <td>${area.active ? '<span class="status-pill status-ready">فعالة</span>' : '<span class="status-pill">غير فعالة</span>'}</td>
     <td><button class="inline-action" data-edit-area="${area.id}">تعديل</button><button class="inline-action" data-toggle-area="${area.id}">${area.active ? "إيقاف" : "تفعيل"}</button></td></tr>
   `).join("") : emptyRow(5, "لم تُضف مناطق توصيل بعد. لا يمكن تأكيد الطلبات قبل ضبط المناطق ورسومها.");
@@ -180,7 +180,7 @@ async function openOrder(orderId) {
         ${order.delivery_instructions ? `<div><span>ملاحظات</span><strong>${escapeHTML(order.delivery_instructions)}</strong></div>` : ""}
       </div>
       <div>${order.items.map((item) => `<div class="order-item"><span>${escapeHTML(item.product_name_ar)} ${item.variant_name_ar ? `— ${escapeHTML(item.variant_name_ar)}` : ""} × ${item.quantity}</span><strong>${formatMoney(item.line_total_iqd)}</strong></div>`).join("")}</div>
-      <div class="order-detail-grid"><div><span>المجموع</span><strong>${formatMoney(order.subtotal_iqd)}</strong></div><div><span>الإجمالي</span><strong>${formatMoney(order.total_iqd)}</strong></div></div>
+      <div class="order-detail-grid"><div><span>المجموع الفرعي</span><strong>${formatMoney(order.subtotal_iqd)}</strong></div><div><span>الإجمالي</span><strong>${formatMoney(order.total_iqd)}</strong></div></div>
       <div class="order-detail-actions">
         <label>تحديث حالة الطلب<select id="order-status-update">${Object.entries(statusNames).map(([key, value]) => `<option value="${key}" ${order.status === key ? "selected" : ""}>${escapeHTML(value)}</option>`).join("")}</select></label>
         <button class="button button-primary mini-button" data-save-order="${order.id}">حفظ الحالة</button>

@@ -142,7 +142,13 @@
   <aside class="cart-drawer" id="cart-drawer" aria-label="سلة التسوق" aria-hidden="true">
     <div class="drawer-heading"><div><span class="eyebrow eyebrow-dark">اختياراتكم</span><h2>سلة التسوق</h2></div><button class="icon-button" id="close-cart" aria-label="إغلاق">×</button></div>
     <div class="cart-items" id="cart-items"></div>
-    <div class="cart-footer"><div class="total-row"><span>المجموع الفرعي</span><strong id="cart-subtotal">٠ د.ع</strong></div><p>تُحسب أجرة التوصيل عند إتمام الطلب.</p><button class="button button-primary full-width" id="checkout-button">إتمام الطلب <span>←</span></button></div>
+    <div class="cart-delivery">
+      <label for="area-select-cart">منطقة التوصيل في بغداد</label>
+      <input id="area-search-cart" type="search" placeholder="ابحثوا عن المنطقة" autocomplete="off">
+      <select id="area-select-cart" required><option value="">اختاروا منطقة التوصيل</option></select>
+      <div class="area-fee" id="area-fee-cart">اختاروا منطقة لعرض أجرة التوصيل.</div>
+    </div>
+    <div class="cart-footer"><div class="total-row"><span>المجموع الفرعي</span><strong id="cart-subtotal">٠ د.ع</strong></div><div class="total-row"><span>التوصيل</span><strong id="cart-delivery-total">—</strong></div><div class="total-row"><span>الإجمالي</span><strong id="cart-total">—</strong></div><p>تُضاف الرسوم المؤكدة للإجمالي، والرسوم الأخرى يحدد لاحقاً.</p><button class="button button-primary full-width" id="checkout-button">إتمام الطلب <span>←</span></button></div>
   </aside>
 
   <dialog class="checkout-dialog" id="checkout-dialog">
@@ -169,7 +175,7 @@
   </dialog>
 
   <dialog class="success-dialog" id="success-dialog">
-    <div class="success-content"><span class="success-icon">✓</span><span class="eyebrow eyebrow-dark">وصلنا طلبكم</span><h2>شكراً لاختياركم <em>فينيـتو</em></h2><p>رقم طلبكم</p><strong class="order-number" id="confirmed-order-number"></strong><p>الدفع نقداً عند الاستلام. سنتواصل معكم لتأكيد التفاصيل.</p><button class="button button-primary" id="success-done">العودة للقائمة</button></div>
+    <div class="success-content"><span class="success-icon">✓</span><span class="eyebrow eyebrow-dark">وصلنا طلبكم</span><h2>شكراً لاختياركم <em>فينيـتو</em></h2><p>رقم طلبكم</p><strong class="order-number" id="confirmed-order-number"></strong><p id="success-delivery-note">الدفع نقداً عند الاستلام. سنتواصل معكم لتأكيد التفاصيل.</p><button class="button button-primary" id="success-done">العودة للقائمة</button></div>
   </dialog>
   <aside class="notification-island" id="notification-island" role="status" aria-live="polite" aria-hidden="true">
     <span class="notification-island-icon" aria-hidden="true">✓</span>
