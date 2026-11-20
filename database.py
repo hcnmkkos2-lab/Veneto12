@@ -57,7 +57,7 @@ def migrate():
         defaults = {
             "business_name": "VENTO",
             "business_name_ar": "حلويات ومعجنات فينتو",
-            "phone": "",
+            "phone": "0772236815",
             "address": "بغداد، العراق",
             "instagram_url": "",
             "facebook_url": "",

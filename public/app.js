@@ -571,7 +571,7 @@ async function init() {
   $("#open-delivery-modal")?.addEventListener("click", () => $("#delivery-dialog").showModal());
   $("#close-delivery")?.addEventListener("click", () => $("#delivery-dialog").close());
   $("#floating-top")?.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
-  $("#floating-whatsapp")?.addEventListener("click", () => window.open("https://wa.me/9647700000000", "_blank", "noopener,noreferrer"));
+  $("#floating-whatsapp")?.addEventListener("click", () => window.open("https://wa.me/9647722236815", "_blank", "noopener,noreferrer"));
   document.querySelectorAll(".delivery-option").forEach((option) => option.addEventListener("change", () => {
     document.querySelectorAll(".delivery-option").forEach((item) => item.classList.remove("selected"));
     option.classList.add("selected");
