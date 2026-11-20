@@ -131,7 +131,7 @@ class PlatformTests(unittest.TestCase):
     def create_product_and_area(self, fee=1500):
         with database.connect() as db:
             category_id = db.execute(
-                "SELECT id FROM product_categories WHERE slug='cakes'"
+                "SELECT id FROM product_categories WHERE slug='sweets'"
             ).fetchone()["id"]
         status, product = self.call("POST", "/api/admin/products", {
             "name": "كيكة فانيلا", "categoryId": category_id, "price": 12000,
@@ -427,7 +427,7 @@ class PlatformTests(unittest.TestCase):
         ).decode("ascii")
         with database.connect() as db:
             category_id = db.execute(
-                "SELECT id FROM product_categories WHERE slug='cakes'"
+                "SELECT id FROM product_categories WHERE slug='sweets'"
             ).fetchone()["id"]
         status, created = self.call("POST", "/api/admin/products", {
             "name": "صورة اختبار", "categoryId": category_id, "price": 1000,
@@ -570,9 +570,10 @@ class PlatformTests(unittest.TestCase):
         self.assertIn(b'id="area-select-cart"', page)
         status, categories = self.call("GET", "/api/categories")
         self.assertEqual(status, 200)
-        self.assertEqual(len(categories), 9)
-        self.assertIn("الكيك والتورتات", [category["name_ar"] for category in categories])
-        self.assertIn("أطباق الضيافة", [category["name_ar"] for category in categories])
+        self.assertEqual(len(categories), 3)
+        self.assertIn("الحلويات", [category["name_ar"] for category in categories])
+        self.assertIn("المعجنات والكيك", [category["name_ar"] for category in categories])
+        self.assertIn("ورق عنب", [category["name_ar"] for category in categories])
         status, admin = self.call("GET", "/admin")
         self.assertEqual(status, 200)
         self.assertIn("الدخول".encode(), admin)
@@ -590,7 +591,7 @@ class PlatformTests(unittest.TestCase):
         try:
             self.assertEqual(
                 snapshot.execute("SELECT COUNT(*) FROM product_categories").fetchone()[0],
-                9,
+                3,
             )
         finally:
             snapshot.close()

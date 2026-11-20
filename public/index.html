@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#93a79c">
   <meta name="description" content="حلويات ومعجنات فينتو — حلويات طازجة ومعجنات من بغداد.">
-  <title>VENTO | حلويات ومعجنات فينتو</title>
+  <title>فينيتو | للحلويات والكيك والمعجنات</title>
   <link rel="preconnect" href="https://images.unsplash.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -47,6 +47,7 @@
       <label class="search-box" aria-label="ابحث عن منتج">
         <span aria-hidden="true">⌕</span>
         <input id="product-search" type="search" placeholder="ماذا تشتهي؟" autocomplete="off">
+        <button id="search-button" type="button">بحث</button>
       </label>
     </div>
   </header>
@@ -56,13 +57,14 @@
       <div class="hero-photo" role="img" aria-label="تشكيلة شهية من الحلويات الطازجة"></div>
       <div class="hero-shade"></div>
       <div class="hero-content">
-        <span class="eyebrow"><i></i> حلاوة تنعمل بحب في بغداد</span>
-        <h1>شنو تحبون تطلبون؟<br>لحظتكم <em>أحلى ويانا</em></h1>
-        <p>كيك ومعجنات وحلويات طازجة، نحضّرها بعناية حتى تجمعكم على طعم تحبّوه.</p>
+        <span class="eyebrow"><i></i> نكهات تصنع يومك سعادة</span>
+        <h1>فينيتو للحلويات<br><em>والكيك والمعجنات</em></h1>
+        <p>كل لقمة حكاية سعادة، نختار لكم أجود المكونات ونجهزها طازجة بحب.</p>
         <div class="hero-actions">
-          <a class="button button-light" href="#menu">تسوّقوا هسه <span>←</span></a>
-          <span class="hero-note">طازج كل يوم <b>✳</b></span>
+          <a class="button button-light" href="#menu">اكتشف المنتجات <span>←</span></a>
+          <button class="hero-location-button" type="button" id="hero-choose-location">اختر فرعك</button>
         </div>
+        <div class="hero-feature-pills"><span>جودة فاخرة</span><span>توصيل سريع</span><span>دفع آمن</span></div>
       </div>
       <div class="hero-stamp"><span>BAKED<br>WITH LOVE</span><b>✳</b></div>
       <div class="store-status-badge" id="store-status-badge" role="status">
@@ -85,13 +87,15 @@
       <span class="intro-flourish" aria-hidden="true">✳</span>
     </section>
 
-    <section class="shop-categories section-wrap" aria-labelledby="category-title">
+    <section class="shop-categories section-wrap" id="categories" aria-labelledby="category-title">
       <div class="section-heading">
         <div><span class="eyebrow eyebrow-dark">اختاروا حسب ذوقكم</span><h2 id="category-title">تسوّقوا حسب <em>الأقسام</em></h2></div>
         <p>اختاروا القسم اللي على بالكم، وشوفوا تشكيلتنا.</p>
       </div>
       <div class="category-list" id="categories" aria-label="تصنيفات المنتجات"></div>
     </section>
+
+    <div class="category-product-sections section-wrap" id="category-product-sections"></div>
 
     <section class="collection-section section-wrap hidden" id="collections">
       <div class="section-heading">
@@ -219,12 +223,12 @@
   <dialog class="account-dialog" id="account-dialog" aria-labelledby="account-title">
     <div class="account-page">
       <button class="account-close icon-button" id="close-account" type="button" aria-label="إغلاق">×</button>
-      <div class="account-brand"><span class="brand-mark">ف</span><strong id="account-title">فينتو</strong><small>حلويات ومعجنات</small></div>
-      <h2>مرحباً بك في فينتو</h2>
-      <p>سجّل دخولك لمتابعة طلباتك وحفظ اختياراتك المفضلة.</p>
+      <div class="account-brand"><span class="brand-mark">ف</span><strong id="account-title">فينيتو</strong><small>حلويات ومعجنات</small></div>
+      <h2>حسابي - مساحتك الخاصة</h2>
+      <p>أهلاً بك في فينيتو للحلويات والكيك والمعجنات. سجّل دخولك لمتابعة طلباتك وحفظ اختياراتك المفضلة.</p>
       <button class="account-login button button-primary" type="button">تسجيل الدخول</button>
       <div class="account-settings">
-        <button type="button"><span>اللغة</span><strong>العربية ›</strong></button>
+        <button type="button" id="account-language"><span>اللغة</span><strong>العربية والإنجليزية ›</strong></button>
         <button type="button"><span>العنوان المحفوظ</span><strong>بغداد - حي أور، قرب فلكة صباح الخياط ›</strong></button>
         <button type="button"><span>معلومات التواصل</span><strong>›</strong></button>
         <button type="button"><span>سياسة الخصوصية</span><strong>›</strong></button>
@@ -233,12 +237,14 @@
   </dialog>
   <dialog class="delivery-dialog" id="delivery-dialog" aria-labelledby="delivery-title">
     <div class="delivery-page">
-      <header class="delivery-header"><button class="icon-button" id="close-delivery" type="button" aria-label="إغلاق">×</button><h2 id="delivery-title">خيار التوصيل</h2></header>
+      <header class="delivery-header"><button class="icon-button" id="close-delivery" type="button" aria-label="إغلاق">×</button><h2 id="delivery-title">طريقة استلام طلبك - خيار التوصيل</h2></header>
       <div class="delivery-steps" aria-label="خطوات اختيار التوصيل"><div class="active"><b>1</b><span>الطريقة</span></div><i></i><div><b>2</b><span>الموقع</span></div><i></i><div><b>3</b><span>الحفظ</span></div></div>
-      <h3>طريقة الاستلام</h3>
+      <h3>كيف تفضل استلام طلبك؟</h3>
       <label class="delivery-option"><input type="radio" name="delivery-method" value="pickup"><span><b>الاستلام من المعرض</b><small>استلم طلبك من أقرب معرض</small></span><strong>⌂</strong></label>
       <label class="delivery-option selected"><input type="radio" name="delivery-method" value="delivery" checked><span><b>التوصيل إلى موقعي</b><small>وفر وقتك ونوصلك لبابك</small></span><strong>⌖</strong></label>
-      <section class="delivery-location"><span>حدد مدينة وموقعك</span><h3>حدد موقع التوصيل</h3><label>الدولة<select><option>العراق</option></select></label><label>المدينة<select><option>بغداد</option></select></label><label>المنطقة أو الحي<select><option>حي أور - قرب فلكة صباح الخياط</option></select></label><button class="delivery-map" type="button"><span><small>تحديد على الخريطة</small><strong>حدد موقعك من الخريطة</strong></span><b>⌖</b></button><button class="delivery-confirm" id="delivery-confirm" type="button">حفظ الموقع ✓</button></section>
+      <section class="delivery-location"><span>معلومات الموقع - حدد مدينة وموقع التوصيل</span><h3>حدد موقع التوصيل</h3><label>الدولة<select><option>العراق</option></select></label><label>المدينة<select><option>بغداد</option></select></label><label>المنطقة أو الحي<select><option>بغداد - حي أور - قرب فلكة صباح الخياط</option></select></label><button class="delivery-map" type="button"><span><small>تحديد على الخريطة</small><strong>حدد موقعك من الخريطة</strong></span><b>⌖</b></button><button class="delivery-confirm" id="delivery-confirm" type="button">حفظ الموقع ✓</button></section>
+      <p class="delivery-helper">يمكنك اختيار الاستلام من المعرض أو تحديد موقعك بدقة للتوصيل داخل بغداد.</p>
+      <button class="delivery-confirm delivery-bottom-action" id="delivery-save" type="button">حدد موقعي واحفظ</button>
     </div>
   </dialog>
   <button class="floating-whatsapp" id="floating-whatsapp" type="button" aria-label="تواصل عبر واتساب"><svg viewBox="0 0 32 32"><path d="M16 3A13 13 0 0 0 5 22l-2 7 7-2A13 13 0 1 0 16 3Zm7 18c-.3.8-1.7 1.5-2.4 1.6-.6.1-1.4.2-4.3-.9-3.7-1.5-6.1-5.3-6.3-5.5-.2-.3-1.5-2-.1-3.7.5-.6 1-.7 1.3-.7h.9c.3 0 .7-.1.9.7l1.1 2.6c.1.3.1.5-.1.8l-.8 1c-.2.2-.4.5-.2.8.2.3.9 1.5 2 2.4 1.4 1.2 2.5 1.6 2.9 1.8.3.1.5.1.7-.1l1-1.2c.3-.3.5-.3.8-.2l2.5 1.2c.3.1.5.2.6.4.1.1.1.8-.2 1.6Z"/></svg></button>

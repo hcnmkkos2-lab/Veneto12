@@ -82,15 +82,9 @@ def migrate():
             ((day,) for day in range(7)),
         )
         categories = (
-            ("الكيك والتورتات", "cakes", 1),
-            ("المعجنات والفطائر", "pastries", 2),
-            ("كرواسون", "croissants", 3),
-            ("كوكيز", "cookies", 4),
-            ("الحلويات الشرقية", "arabic-sweets", 5),
-            ("الحلويات الغربية", "western-desserts", 6),
-            ("بوكسات المناسبات", "special-occasions", 7),
-            ("أطباق الضيافة", "hospitality-trays", 8),
-            ("الشوكولاتة", "chocolate", 9),
+            ("الحلويات", "sweets", 1),
+            ("المعجنات والكيك", "pastries-cakes", 2),
+            ("ورق عنب", "stuffed-grape-leaves", 3),
         )
         db.executemany(
             "INSERT OR IGNORE INTO product_categories (name_ar, slug, sort_order, created_at) "

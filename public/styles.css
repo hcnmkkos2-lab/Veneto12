@@ -677,3 +677,18 @@ html[data-theme="dark"] .product-detail-image{background:#344743}
   .product-detail-image{height:190px}
   .product-detail-copy h2{font-size:21px}
 }
+
+.search-box{position:relative}.search-box #search-button{display:none}
+.hero-location-button{min-height:44px;border:1px solid rgba(255,255,255,.55);border-radius:999px;background:rgba(255,255,255,.12);color:#fff;padding:0 18px;font-size:12px}
+.hero-feature-pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.hero-feature-pills span{min-height:34px;padding:8px 12px;border:1px solid rgba(255,255,255,.5);border-radius:999px;background:rgba(255,255,255,.12);color:#fff;font-size:10px}
+.category-product-sections{padding-top:12px;padding-bottom:25px}.category-product-section{margin-bottom:28px}.category-section-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.category-section-heading h2{margin:0;font-size:26px;font-weight:600}.category-section-heading button{border:0;border-bottom:1px solid #718c7f;background:transparent;color:#526b61;font-size:11px;padding:7px 2px}.category-product-grid{display:grid!important;grid-auto-flow:column!important;grid-auto-columns:230px!important;grid-template-columns:none!important;overflow-x:auto!important;scroll-snap-type:x mandatory;padding-bottom:12px}.category-product-grid .product-card{scroll-snap-align:start}
+.favorite-button{position:absolute;bottom:10px;right:10px;z-index:3;width:36px;height:36px;border:0;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.92);color:#526b61;font-size:21px;box-shadow:0 4px 12px rgba(47,62,61,.12)}.favorite-button.active{background:#526b61;color:#fff}
+.delivery-helper{margin:10px 0 8px;color:#718079;font-size:10px;line-height:1.7}.delivery-bottom-action{width:100%;margin-top:5px}.delivery-confirm{height:46px;border:0;border-radius:12px;background:#93a79c;color:#fff;font-size:12px}
+
+@media(max-width:720px){
+  .search-box #search-button{display:block;position:absolute;left:5px;top:5px;height:34px;padding:0 10px;border:0;border-radius:999px;background:#526b61;color:#fff;font-size:10px}
+  .search-box input{padding-left:52px!important;padding-right:8px!important}
+  .hero-feature-pills{margin-top:12px}.hero-feature-pills span{min-height:30px;padding:7px 9px;font-size:9px}.hero-location-button{min-height:44px;font-size:11px}
+  .category-product-sections{padding:12px 15px 20px}.category-section-heading h2{font-size:22px}.category-product-grid{grid-auto-columns:210px!important}.category-product-grid .product-card{border-radius:18px}.favorite-button{width:34px;height:34px}
+  .delivery-page{padding-bottom:calc(24px + env(safe-area-inset-bottom))}
+}

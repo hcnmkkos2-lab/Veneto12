@@ -108,7 +108,8 @@ function productCard(product) {
         ? `<img src="${esc(image)}" alt="${esc(product.name_ar)}" loading="lazy"><div class="product-placeholder" hidden>✳</div>`
         : `<div class="product-placeholder" aria-hidden="true">✳</div>`}
         <span class="product-availability">متوفر</span>
-        ${product.is_new ? '<span class="product-badge">جديد</span>' : product.featured ? '<span class="product-badge">خصم 20%</span>' : ""}
+        ${product.is_new ? '<span class="product-badge">جديد</span>' : product.featured ? '<span class="product-badge">مختار لك</span>' : ""}
+        <button class="favorite-button" type="button" data-favorite="${product.id}" aria-label="إضافة ${esc(product.name_ar)} للمفضلة">♡</button>
         <button class="product-details-trigger" type="button" data-details="${product.id}" aria-label="تفاصيل المنتج"></button>
       </div>
       <div class="product-info">
@@ -160,6 +161,21 @@ function renderProducts() {
   $("#menu-empty").classList.toggle("hidden", products.length > 0);
   $("#products").classList.toggle("hidden", products.length === 0);
   $("#products").innerHTML = products.map(productCard).join("");
+}
+
+function renderCategoryProductSections() {
+  const container = $("#category-product-sections");
+  if (!container) return;
+  const categories = state.categories.length ? state.categories : [];
+  const sections = categories.map((category) => {
+    const products = state.products.filter((product) => String(product.category_id) === String(category.id));
+    if (!products.length) return "";
+    return `<section class="category-product-section" data-category-section="${category.id}">
+      <div class="category-section-heading"><h2>${esc(category.name_ar)}</h2><button type="button" data-category-view="${category.id}">عرض الكل</button></div>
+      <div class="product-grid category-product-grid">${products.map(productCard).join("")}</div>
+    </section>`;
+  }).join("");
+  container.innerHTML = sections;
 }
 
 async function loadCollections() {
@@ -454,6 +470,7 @@ async function init() {
     state.categories = await api("/api/categories");
     renderCategories();
     await Promise.all([loadProducts(), loadCart(), loadAreas(), loadCollections()]);
+    renderCategoryProductSections();
   } catch (error) {
     toast(error.message);
   }
@@ -532,6 +549,12 @@ async function init() {
   }, true));
 
   async function addProductFromGrid(event) {
+    const favorite = event.target.closest("[data-favorite]");
+    if (favorite) {
+      favorite.classList.toggle("active");
+      favorite.textContent = favorite.classList.contains("active") ? "♥" : "♡";
+      return;
+    }
     const detailsButton = event.target.closest("[data-details]");
     if (detailsButton) {
       const product = findProduct(detailsButton.dataset.details);
@@ -558,14 +581,34 @@ async function init() {
     else button.disabled = false;
   });
 
+  const runSearch = () => {
+    clearTimeout(searchTimer);
+    state.search = $("#product-search").value.trim();
+    loadProducts();
+    $("#menu").scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   $("#product-search").addEventListener("input", () => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => {
-      state.search = $("#product-search").value.trim();
-      loadProducts();
-    }, 250);
+    searchTimer = setTimeout(runSearch, 250);
   });
+  $("#search-button")?.addEventListener("click", runSearch);
+  $("#hero-choose-location")?.addEventListener("click", () => $("#delivery-dialog").showModal());
   $("#open-cart").addEventListener("click", openCart);
+  $("#category-product-sections")?.addEventListener("click", (event) => {
+    const viewButton = event.target.closest("[data-category-view]");
+    if (viewButton) {
+      state.category = viewButton.dataset.categoryView;
+      renderCategories();
+      loadProducts();
+      $("#menu").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+  $("#category-product-sections")?.addEventListener("click", (event) => {
+    const favorite = event.target.closest("[data-favorite]");
+    if (!favorite) return;
+    favorite.classList.toggle("active");
+    favorite.textContent = favorite.classList.contains("active") ? "♥" : "♡";
+  });
   $("#open-account-page")?.addEventListener("click", () => $("#account-dialog").showModal());
   $("#close-account")?.addEventListener("click", () => $("#account-dialog").close());
   $("#open-delivery-modal")?.addEventListener("click", () => $("#delivery-dialog").showModal());
@@ -576,7 +619,26 @@ async function init() {
     document.querySelectorAll(".delivery-option").forEach((item) => item.classList.remove("selected"));
     option.classList.add("selected");
   }));
+  document.querySelector(".delivery-map")?.addEventListener("click", () => {
+    const mapText = document.querySelector(".delivery-map strong");
+    if (!navigator.geolocation) {
+      toast("تحديد الموقع الجغرافي غير متاح على هذا الجهاز");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(() => {
+      mapText.textContent = "تم تحديد موقعك الحالي";
+      $("#delivery-confirm").textContent = "تم تحديد الموقع ✓";
+    }, () => toast("يرجى السماح للمتصفح بتحديد موقعك"), { enableHighAccuracy: true, timeout: 10000 });
+  });
+  $("#delivery-save")?.addEventListener("click", () => {
+    const locationText = "بغداد - حي أور";
+    $(".market-location-copy strong").textContent = locationText;
+    localStorage.setItem("venito_delivery_location", locationText);
+    $("#delivery-dialog").close();
+    toast("تم حفظ موقع التوصيل");
+  });
   $("#mobile-open-cart").addEventListener("click", openCart);
+  $("#account-language")?.addEventListener("click", () => applyLanguage(document.documentElement.lang === "ar" ? "en" : "ar"));
   $("#language-toggle").addEventListener("click", () => {
     applyLanguage(document.documentElement.lang === "ar" ? "en" : "ar");
   });
