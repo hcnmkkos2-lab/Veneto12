@@ -590,7 +590,7 @@ class VenitoHandler(BaseHTTPRequestHandler):
     def _categories(self):
         with database.connect() as db:
             categories = [row_dict(r) for r in db.execute(
-                "SELECT c.id,c.name_ar,c.slug,c.sort_order,COUNT(p.id) AS product_count "
+                "SELECT c.id,c.name_ar,c.slug,c.sort_order,c.image_url,COUNT(p.id) AS product_count "
                 "FROM product_categories c LEFT JOIN products p ON p.category_id=c.id AND p.available=1 "
                 "WHERE c.active=1 GROUP BY c.id ORDER BY c.sort_order,c.name_ar"
             )]
@@ -1214,9 +1214,10 @@ class VenitoHandler(BaseHTTPRequestHandler):
                     fail("معرّف التصنيف يقبل الأحرف الإنجليزية الصغيرة والأرقام والشرطة فقط.")
                 try:
                     cursor = db.execute(
-                        "INSERT INTO product_categories (name_ar,slug,sort_order,active,created_at) "
-                        "VALUES (?,?,?,?,?)",
-                        (name, slug, safe_int(data.get("sortOrder", 0), "الترتيب", 0, 100000),
+                        "INSERT INTO product_categories (name_ar,slug,image_url,sort_order,active,created_at) "
+                        "VALUES (?,?,?,?,?,?)",
+                        (name, slug, str(data.get("imageUrl", "")).strip(),
+                         safe_int(data.get("sortOrder", 0), "الترتيب", 0, 100000),
                          bool_value(data.get("active", True)), database.utc_now()),
                     )
                 except sqlite3.IntegrityError:
@@ -1241,8 +1242,9 @@ class VenitoHandler(BaseHTTPRequestHandler):
                     if not re.fullmatch(r"[a-z0-9-]+", slug):
                         fail("معرّف التصنيف غير صحيح.")
                     db.execute(
-                        "UPDATE product_categories SET name_ar=?,slug=?,sort_order=?,active=? WHERE id=?",
-                        (name, slug, safe_int(data.get("sortOrder", 0), "الترتيب", 0, 100000),
+                        "UPDATE product_categories SET name_ar=?,slug=?,image_url=?,sort_order=?,active=? WHERE id=?",
+                        (name, slug, str(data.get("imageUrl", "")).strip(),
+                         safe_int(data.get("sortOrder", 0), "الترتيب", 0, 100000),
                          bool_value(data.get("active", True)), category_id),
                     )
                 db.commit()

@@ -377,6 +377,7 @@ function categoryForm(category = null) {
     <span class="eyebrow eyebrow-dark">${category ? "تعديل التصنيف" : "تصنيف جديد"}</span><h2>${category ? escapeHTML(category.name_ar) : "إضافة تصنيف"}</h2>
     <label>اسم التصنيف بالعربية<input name="name" required maxlength="100" value="${escapeHTML(category?.name_ar || "")}"></label>
     <label>المعرّف الإنجليزي<input name="slug" required maxlength="100" pattern="[a-z0-9-]+" dir="ltr" placeholder="western-desserts" value="${escapeHTML(category?.slug || `category-${Date.now()}`)}"></label>
+    <label>رابط صورة التصنيف (اختياري)<input name="imageUrl" dir="ltr" value="${escapeHTML(category?.image_url || "")}" placeholder="https://..."></label>
     <label>ترتيب العرض<input name="sortOrder" type="number" min="0" value="${category?.sort_order ?? 0}"></label>
     ${checkbox("active", "تصنيف فعال", category ? !!category.active : true)}
     <div class="modal-actions"><button class="button button-primary" type="submit">حفظ</button><button class="button button-secondary" type="button" data-close-dialog>إلغاء</button></div>
@@ -510,7 +511,7 @@ async function handleSubmit(event) {
     if (form.id === "category-form") {
       const values = new FormData(form);
       const payload = { name: values.get("name").trim(), slug: values.get("slug").trim(),
-        sortOrder: Number(values.get("sortOrder") || 0), active: values.has("active") };
+        imageUrl: values.get("imageUrl").trim(), sortOrder: Number(values.get("sortOrder") || 0), active: values.has("active") };
       const id = form.dataset.id;
       await request(`/api/admin/categories${id ? `/${id}` : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });
       $$("#admin-dialog").close();

@@ -68,20 +68,21 @@ const categoryPhotos = {
   chocolate: "photo-1606313564200-e75d5e30476c",
 };
 
-function categoryPhoto(slug = "all") {
+function categoryPhoto(slug = "all", imageUrl = "") {
+  if (imageUrl) return imageUrl;
   const image = categoryPhotos[slug] || categoryPhotos.all;
-  return `https://images.unsplash.com/${image}?auto=format&fit=crop&w=500&q=80`;
+  return `https://images.unsplash.com/${image}?auto=format&fit=crop&w=700&q=85`;
 }
 
 function renderCategories() {
-  const all = `<button class="category-chip category-card ${state.category === "" ? "active" : ""}" data-category="">
-    <span class="category-icon" aria-hidden="true" style="--category-photo:url('${categoryPhoto()}')">${categoryIcon("all")}</span><span class="category-name">كل المنتجات</span>
-    <small>تسوّقوا الكل</small></button>`;
+  const all = `<button class="category-chip category-card all-category ${state.category === "" ? "active" : ""}" data-category="">
+    <span class="category-icon" aria-hidden="true" style="--category-photo:url('${categoryPhoto()}')"><span class="category-grid-icon">▦</span></span>
+    <span class="category-number">01</span><span class="category-name">كل المنتجات</span></button>`;
   $("#categories").innerHTML = all + state.categories.map((category) =>
     `<button class="category-chip category-card ${state.category === String(category.id) ? "active" : ""}" data-category="${category.id}">
-      <span class="category-icon" aria-hidden="true" style="--category-photo:url('${categoryPhoto(category.slug)}')">${categoryIcon(category.slug, category.name_ar)}</span>
-      <span class="category-name">${esc(category.name_ar)}</span>
-      <small>${Number(category.product_count || 0).toLocaleString("ar-IQ")} منتجات</small></button>`
+      <span class="category-icon" aria-hidden="true" style="--category-photo:url('${categoryPhoto(category.slug, category.image_url)}')"></span>
+      <span class="category-number">${String(state.categories.indexOf(category) + 2).padStart(2, "0")}</span>
+      <span class="category-name">${esc(category.name_ar)}</span></button>`
   ).join("");
 }
 
@@ -106,11 +107,12 @@ function productCard(product) {
       <div class="product-image">${image
         ? `<img src="${esc(image)}" alt="${esc(product.name_ar)}" loading="lazy"><div class="product-placeholder" hidden>✳</div>`
         : `<div class="product-placeholder" aria-hidden="true">✳</div>`}
-        ${product.is_new ? '<span class="product-badge">جديد</span>' : product.featured ? '<span class="product-badge">اختيار فينتو</span>' : ""}
-        <button class="product-details-trigger" type="button" data-details="${product.id}">تفاصيل المنتج</button>
+        <span class="product-availability">متوفر</span>
+        ${product.is_new ? '<span class="product-badge">جديد</span>' : product.featured ? '<span class="product-badge">خصم 20%</span>' : ""}
+        <button class="product-details-trigger" type="button" data-details="${product.id}" aria-label="تفاصيل المنتج"></button>
       </div>
       <div class="product-info">
-        <h3><button class="product-title-trigger" type="button" data-details="${product.id}">${esc(product.name_ar)}</button></h3><span class="product-category">${esc(product.category_name)}</span>
+        <h3><button class="product-title-trigger" type="button" data-details="${product.id}">${esc(product.name_ar)}</button></h3>
         <p class="product-description">${esc(product.description_ar || "نحضّره لكم بعناية، طازجاً كل يوم.")}</p>
         ${variants.length ? `<select class="product-variant" aria-label="اختيار الحجم أو النوع" data-variants="${product.id}">
           <option value="">اختاروا الحجم أو النوع</option>${variants.map((variant) => `<option value="${variant.id}" data-price="${variant.price_iqd ?? ""}" ${variant.price_iqd == null ? "disabled" : ""}>${esc(variant.name_ar)}${variant.price_iqd == null ? " — السعر غير محدد" : ` — ${esc(money(variant.price_iqd))}`}</option>`).join("")}
@@ -118,7 +120,7 @@ function productCard(product) {
         <div class="product-bottom"><span class="product-price" data-price-for="${product.id}">${esc(money(initialPrice))}</span>
           <button class="add-button" data-add="${product.id}" aria-label="إضافة ${esc(product.name_ar)} إلى السلة" ${initialPrice == null && !variants.length ? "disabled" : ""}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.2 10.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 2-1.6L20.5 8H6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="19" r="1.3" fill="currentColor"/><circle cx="17" cy="19" r="1.3" fill="currentColor"/></svg>
-            <span>أضف للسلة</span>
+            <span>إضافة للسلة</span>
           </button>
         </div>
       </div>
@@ -564,6 +566,16 @@ async function init() {
     }, 250);
   });
   $("#open-cart").addEventListener("click", openCart);
+  $("#open-account-page")?.addEventListener("click", () => $("#account-dialog").showModal());
+  $("#close-account")?.addEventListener("click", () => $("#account-dialog").close());
+  $("#open-delivery-modal")?.addEventListener("click", () => $("#delivery-dialog").showModal());
+  $("#close-delivery")?.addEventListener("click", () => $("#delivery-dialog").close());
+  $("#floating-top")?.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+  $("#floating-whatsapp")?.addEventListener("click", () => window.open("https://wa.me/9647700000000", "_blank", "noopener,noreferrer"));
+  document.querySelectorAll(".delivery-option").forEach((option) => option.addEventListener("change", () => {
+    document.querySelectorAll(".delivery-option").forEach((item) => item.classList.remove("selected"));
+    option.classList.add("selected");
+  }));
   $("#mobile-open-cart").addEventListener("click", openCart);
   $("#language-toggle").addEventListener("click", () => {
     applyLanguage(document.documentElement.lang === "ar" ? "en" : "ar");

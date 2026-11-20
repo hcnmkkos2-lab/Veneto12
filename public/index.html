@@ -16,6 +16,14 @@
   <div class="announcement" id="announcement">
     <span>طازج كل يوم، بحب من فينتو</span>
   </div>
+  <button class="market-location-bar" id="open-delivery-modal" type="button">
+    <span class="market-location-pin" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.1 7-12A7 7 0 1 0 5 9c0 5.9 7 12 7 12Z"/><circle cx="12" cy="9" r="2.4"/></svg></span>
+    <span class="market-location-copy"><small>التوصيل من</small><strong>الظهران</strong></span>
+    <span class="market-location-chevron" aria-hidden="true">⌄</span>
+  </button>
+  <button class="market-notification" id="market-notification" type="button" aria-label="الإشعارات">
+    <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 20h4"/></svg>
+  </button>
   <header class="site-header">
     <a class="brand" href="/" aria-label="فينتو، الصفحة الرئيسية">
       <span class="brand-mark" aria-hidden="true">ف</span>
@@ -155,9 +163,9 @@
     <button class="mobile-nav-link" id="mobile-open-cart" type="button">
       <span class="mobile-cart-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 4h2l2.2 10.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 2-1.6L20.5 8H6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="19" r="1.3" fill="currentColor"/><circle cx="17" cy="19" r="1.3" fill="currentColor"/></svg><b id="mobile-cart-count">0</b></span><small>السلة</small>
     </button>
-    <a class="mobile-nav-link" href="#contact">
-      <span aria-hidden="true">♡</span><small>تواصل</small>
-    </a>
+<button class="mobile-nav-link" id="open-account-page" type="button">
+      <span aria-hidden="true">♙</span><small>حسابي</small>
+    </button>
   </nav>
 
   <div class="drawer-backdrop hidden" id="drawer-backdrop"></div>
@@ -208,6 +216,33 @@
     <span class="notification-island-copy" id="notification-island-copy">تمت الإضافة إلى السلة</span>
     <button class="notification-island-action" id="notification-view-cart" type="button">عرض السلة</button>
   </aside>
+  <dialog class="account-dialog" id="account-dialog" aria-labelledby="account-title">
+    <div class="account-page">
+      <button class="account-close icon-button" id="close-account" type="button" aria-label="إغلاق">×</button>
+      <div class="account-brand"><span class="brand-mark">ف</span><strong id="account-title">فينتو</strong><small>حلويات ومعجنات</small></div>
+      <h2>مرحباً بك في فينتو</h2>
+      <p>سجّل دخولك لمتابعة طلباتك وحفظ اختياراتك المفضلة.</p>
+      <button class="account-login button button-primary" type="button">تسجيل الدخول</button>
+      <div class="account-settings">
+        <button type="button"><span>اللغة</span><strong>العربية ›</strong></button>
+        <button type="button"><span>العنوان المحفوظ</span><strong>الظهران ›</strong></button>
+        <button type="button"><span>معلومات التواصل</span><strong>›</strong></button>
+        <button type="button"><span>سياسة الخصوصية</span><strong>›</strong></button>
+      </div>
+    </div>
+  </dialog>
+  <dialog class="delivery-dialog" id="delivery-dialog" aria-labelledby="delivery-title">
+    <div class="delivery-page">
+      <header class="delivery-header"><button class="icon-button" id="close-delivery" type="button" aria-label="إغلاق">×</button><h2 id="delivery-title">خيار التوصيل</h2></header>
+      <div class="delivery-steps" aria-label="خطوات اختيار التوصيل"><div class="active"><b>1</b><span>الطريقة</span></div><i></i><div><b>2</b><span>الموقع</span></div><i></i><div><b>3</b><span>الحفظ</span></div></div>
+      <h3>طريقة الاستلام</h3>
+      <label class="delivery-option"><input type="radio" name="delivery-method" value="pickup"><span><b>الاستلام من المعرض</b><small>استلم طلبك من أقرب معرض</small></span><strong>⌂</strong></label>
+      <label class="delivery-option selected"><input type="radio" name="delivery-method" value="delivery" checked><span><b>التوصيل إلى موقعي</b><small>وفر وقتك ونوصلك لبابك</small></span><strong>⌖</strong></label>
+      <section class="delivery-location"><span>حدد مدينة وموقعك</span><h3>حدد موقع التوصيل</h3><label>الدولة<select><option>المملكة العربية السعودية</option></select></label><label>المدينة<select><option>الظهران</option></select></label><button class="delivery-map" type="button"><span><small>تحديد على الخريطة</small><strong>حدد موقعك من الخريطة</strong></span><b>⌖</b></button><button class="delivery-confirm" id="delivery-confirm" type="button">حدد موقعك أولاً ✓</button></section>
+    </div>
+  </dialog>
+  <button class="floating-whatsapp" id="floating-whatsapp" type="button" aria-label="تواصل عبر واتساب"><svg viewBox="0 0 32 32"><path d="M16 3A13 13 0 0 0 5 22l-2 7 7-2A13 13 0 1 0 16 3Zm7 18c-.3.8-1.7 1.5-2.4 1.6-.6.1-1.4.2-4.3-.9-3.7-1.5-6.1-5.3-6.3-5.5-.2-.3-1.5-2-.1-3.7.5-.6 1-.7 1.3-.7h.9c.3 0 .7-.1.9.7l1.1 2.6c.1.3.1.5-.1.8l-.8 1c-.2.2-.4.5-.2.8.2.3.9 1.5 2 2.4 1.4 1.2 2.5 1.6 2.9 1.8.3.1.5.1.7-.1l1-1.2c.3-.3.5-.3.8-.2l2.5 1.2c.3.1.5.2.6.4.1.1.1.8-.2 1.6Z"/></svg></button>
+  <button class="floating-top" id="floating-top" type="button" aria-label="العودة للأعلى">↑</button>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
