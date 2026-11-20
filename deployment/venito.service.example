@@ -1,5 +1,5 @@
 [Unit]
-Description=VENITO bakery ordering platform
+Description=VENTO bakery ordering platform
 After=network.target
 
 [Service]

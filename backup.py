@@ -34,7 +34,7 @@ def create_backup(destination=None):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Create a consistent SQLite backup of VENITO.")
+    parser = argparse.ArgumentParser(description="Create a consistent SQLite backup of VENTO.")
     parser.add_argument("destination", nargs="?", help="Optional backup file path")
     args = parser.parse_args()
     print(create_backup(args.destination))

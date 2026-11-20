@@ -195,7 +195,7 @@ def build_receipt_pdf(order, items, receipt_number, business_name, phone, addres
         leftMargin=12 * mm,
         topMargin=10 * mm,
         bottomMargin=12 * mm,
-        title=f"VENITO {receipt_number}",
+        title=f"VENTO {receipt_number}",
         author=business_name,
     )
     styles = {
@@ -342,7 +342,7 @@ def order_dict(row):
 
 
 class VenitoHandler(BaseHTTPRequestHandler):
-    server_version = "VENITO/1.0"
+    server_version = "VENTO/1.0"
 
     def log_message(self, format_string, *args):
         message = format_string % args
@@ -964,7 +964,7 @@ class VenitoHandler(BaseHTTPRequestHandler):
             order,
             items,
             receipt_number,
-            get_setting(db, "business_name_ar", "حلويات ومعجنات فينيتو"),
+            get_setting(db, "business_name_ar", "حلويات ومعجنات فينتو"),
             get_setting(db, "phone"),
             get_setting(db, "address"),
             get_setting(db, "receipt_footer"),
@@ -1653,7 +1653,7 @@ class VenitoHandler(BaseHTTPRequestHandler):
             if not order:
                 fail("الطلب غير موجود.", 404)
             items = db.execute("SELECT * FROM order_items WHERE order_id=?", (order_id,)).fetchall()
-            business_name = get_setting(db, "business_name_ar", "حلويات ومعجنات فينيتو")
+            business_name = get_setting(db, "business_name_ar", "حلويات ومعجنات فينتو")
         receipt = [
             business_name, "==============================",
             f"رقم الطلب: {order['order_number']}",
@@ -1710,8 +1710,8 @@ class VenitoHandler(BaseHTTPRequestHandler):
             port = safe_int(get_setting(db, "printer_port", "9100"), "منفذ الطابعة", 1, 65535)
             if not host:
                 fail("أدخلوا عنوان طابعة الشبكة أولاً.", 409)
-            business_name = get_setting(db, "business_name_ar", "حلويات ومعجنات فينيتو")
-        payload = b"\x1b@" + f"{business_name}\nاختبار الاتصال بالطابعة\nVENITO ESC/POS\n\n\n".encode("utf-8") + b"\x1dV\x00"
+            business_name = get_setting(db, "business_name_ar", "حلويات ومعجنات فينتو")
+        payload = b"\x1b@" + f"{business_name}\nاختبار الاتصال بالطابعة\nVENTO ESC/POS\n\n\n".encode("utf-8") + b"\x1dV\x00"
         try:
             with socket.create_connection((host, port), timeout=4) as printer:
                 printer.settimeout(4)
@@ -1753,7 +1753,7 @@ def main():
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8000"))
     httpd = ThreadingHTTPServer((host, port), VenitoHandler)
-    print(f"VENITO server listening on http://{host}:{port}")
+    print(f"VENTO server listening on http://{host}:{port}")
     if not os.environ.get("ADMIN_USERNAME") or not os.environ.get("ADMIN_PASSWORD"):
         print("No initial admin created. Set ADMIN_USERNAME and ADMIN_PASSWORD before startup.")
     httpd.serve_forever()

@@ -55,8 +55,8 @@ def migrate():
             )
 
         defaults = {
-            "business_name": "VENITO",
-            "business_name_ar": "حلويات ومعجنات فينيتو",
+            "business_name": "VENTO",
+            "business_name_ar": "حلويات ومعجنات فينتو",
             "phone": "",
             "address": "بغداد، العراق",
             "instagram_url": "",
@@ -82,41 +82,21 @@ def migrate():
             ((day,) for day in range(7)),
         )
         categories = (
-            ("كيك", "cakes", 1),
-            ("معجنات", "pastries", 2),
+            ("الكيك والتورتات", "cakes", 1),
+            ("المعجنات والفطائر", "pastries", 2),
             ("كرواسون", "croissants", 3),
             ("كوكيز", "cookies", 4),
-            ("حلويات شرقية", "arabic-sweets", 5),
-            ("حلويات غربية", "western-desserts", 6),
-            ("مناسبات خاصة", "special-occasions", 7),
+            ("الحلويات الشرقية", "arabic-sweets", 5),
+            ("الحلويات الغربية", "western-desserts", 6),
+            ("بوكسات المناسبات", "special-occasions", 7),
+            ("أطباق الضيافة", "hospitality-trays", 8),
+            ("الشوكولاتة", "chocolate", 9),
         )
         db.executemany(
             "INSERT OR IGNORE INTO product_categories (name_ar, slug, sort_order, created_at) "
             "VALUES (?, ?, ?, ?)",
             ((*category, utc_now()) for category in categories),
         )
-        arabic_sweets = db.execute(
-            "SELECT id FROM product_categories WHERE slug='arabic-sweets' AND active=1"
-        ).fetchone()
-        if arabic_sweets:
-            saadah_count = db.execute(
-                "SELECT COUNT(*) FROM products WHERE category_id=? AND name_ar='طبق سعاده'",
-                (arabic_sweets["id"],),
-            ).fetchone()[0]
-            for sort_order in range(saadah_count, 2):
-                db.execute(
-                    "INSERT INTO products "
-                    "(category_id,name_ar,description_ar,price_iqd,available,featured,is_new,"
-                    "sort_order,created_at,updated_at) "
-                    "VALUES (?, 'طبق سعاده', '', 5000, 1, 0, 1, ?, ?, ?)",
-                    (
-                        arabic_sweets["id"],
-                        sort_order + 1,
-                        utc_now(),
-                        utc_now(),
-                    ),
-                )
-
         username = os.environ.get("ADMIN_USERNAME", "").strip()
         password = os.environ.get("ADMIN_PASSWORD", "")
         if username and password and (

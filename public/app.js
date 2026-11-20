@@ -56,24 +56,43 @@ function toast(message) {
 }
 
 function renderCategories() {
-  const all = `<button class="category-chip ${state.category === "" ? "active" : ""}" data-category="">الكل</button>`;
+  const all = `<button class="category-chip category-card ${state.category === "" ? "active" : ""}" data-category="">
+    <span class="category-icon" aria-hidden="true">${categoryIcon("all")}</span><span class="category-name">كل المنتجات</span>
+    <small>تسوّقوا الكل</small></button>`;
   $("#categories").innerHTML = all + state.categories.map((category) =>
-    `<button class="category-chip ${state.category === String(category.id) ? "active" : ""}" data-category="${category.id}">${esc(category.name_ar)}</button>`
+    `<button class="category-chip category-card ${state.category === String(category.id) ? "active" : ""}" data-category="${category.id}">
+      <span class="category-icon" aria-hidden="true">${categoryIcon(category.slug, category.name_ar)}</span>
+      <span class="category-name">${esc(category.name_ar)}</span>
+      <small>${Number(category.product_count || 0).toLocaleString("ar-IQ")} منتجات</small></button>`
   ).join("");
+}
+
+function categoryIcon(slug = "", name = "") {
+  const label = `${slug} ${name}`.toLowerCase();
+  let drawing = '<path d="M4 10h16l-1 10H5L4 10Z"/><path d="M3 10 5 4h14l2 6M8 10V7m4 3V7m4 3V7"/>';
+  if (/cake|كيك|تورت/.test(label)) drawing = '<path d="M4 12h16v8H4zM4 12c0-2 2-3 4-2 2-3 6-3 8 0 2-1 4 0 4 2M8 8V5m8 3V5"/>';
+  else if (/arabic|شرقي|بقلاو|كن/.test(label)) drawing = '<path d="m12 3 8 5-8 5-8-5 8-5Zm-8 9 8 5 8-5M4 16l8 5 8-5"/>';
+  else if (/western|غربي|كوكي|شوكولاتة/.test(label)) drawing = '<path d="M12 3a9 9 0 1 0 9 9 3 3 0 0 1-4-4 3 3 0 0 1-5-5Z"/><circle cx="8" cy="12" r="1"/><circle cx="12" cy="16" r="1"/>';
+  else if (/pastr|croissant|معجن|كرواس|فطير/.test(label)) drawing = '<path d="M4 17c0-7 4-12 8-12s8 5 8 12H4Z"/><path d="M7 17c0-5 2-8 5-8s5 3 5 8m-7-8-2-3m7 3 2-3"/>';
+  else if (/gift|occasion|مناسب|بوكس|ضيافة/.test(label)) drawing = '<path d="M4 10h16v11H4zM3 7h18v3H3zM12 7c-5 0-5-5-2-5 2 0 2 3 2 5Zm0 0c0-5 4-6 5-4s-1 4-5 4Zm0 0v14"/>';
+  else if (/drink|مشروب/.test(label)) drawing = '<path d="M6 4h12l-1 17H7L6 4Zm2-1h8M9 8h6"/>';
+  else if (/all|الكل/.test(label)) drawing = '<rect x="4" y="4" width="6" height="6" rx="2"/><rect x="14" y="4" width="6" height="6" rx="2"/><rect x="4" y="14" width="6" height="6" rx="2"/><rect x="14" y="14" width="6" height="6" rx="2"/>';
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${drawing}</svg>`;
 }
 
 function productCard(product) {
   const image = product.images?.[0];
   const variants = product.variants || [];
   const initialPrice = variants.length ? null : product.price_iqd;
-  return `<article class="product-card">
+  return `<article class="product-card" data-product-card="${product.id}">
       <div class="product-image">${image
         ? `<img src="${esc(image)}" alt="${esc(product.name_ar)}" loading="lazy"><div class="product-placeholder" hidden>✳</div>`
         : `<div class="product-placeholder" aria-hidden="true">✳</div>`}
-        ${product.is_new ? '<span class="product-badge">جديد</span>' : product.featured ? '<span class="product-badge">اختيار فينيتو</span>' : ""}
+        ${product.is_new ? '<span class="product-badge">جديد</span>' : product.featured ? '<span class="product-badge">اختيار فينتو</span>' : ""}
+        <button class="product-details-trigger" type="button" data-details="${product.id}">تفاصيل المنتج</button>
       </div>
       <div class="product-info">
-        <h3>${esc(product.name_ar)}</h3><span class="product-category">${esc(product.category_name)}</span>
+        <h3><button class="product-title-trigger" type="button" data-details="${product.id}">${esc(product.name_ar)}</button></h3><span class="product-category">${esc(product.category_name)}</span>
         <p class="product-description">${esc(product.description_ar || "نحضّره لكم بعناية، طازجاً كل يوم.")}</p>
         ${variants.length ? `<select class="product-variant" aria-label="اختيار الحجم أو النوع" data-variants="${product.id}">
           <option value="">اختاروا الحجم أو النوع</option>${variants.map((variant) => `<option value="${variant.id}" data-price="${variant.price_iqd ?? ""}" ${variant.price_iqd == null ? "disabled" : ""}>${esc(variant.name_ar)}${variant.price_iqd == null ? " — السعر غير محدد" : ` — ${esc(money(variant.price_iqd))}`}</option>`).join("")}
@@ -83,6 +102,34 @@ function productCard(product) {
         </div>
       </div>
     </article>`;
+}
+
+function findProduct(productId) {
+  return [...state.products, ...Object.values(state.collections).flat()]
+    .find((product) => String(product.id) === String(productId));
+}
+
+function openProductDetails(product) {
+  const image = product.images?.[0];
+  const variants = product.variants || [];
+  const dialog = $("#product-dialog");
+  const content = $("#product-dialog-content");
+  content.innerHTML = `<div class="product-detail-layout">
+    <div class="product-detail-image">${image
+      ? `<img src="${esc(image)}" alt="${esc(product.name_ar)}">`
+      : '<span aria-hidden="true">✳</span>'}</div>
+    <div class="product-detail-copy"><span class="eyebrow eyebrow-dark">تفاصيل فينتو</span>
+      <span class="product-category">${esc(product.category_name)}</span>
+      <h2 id="product-dialog-title">${esc(product.name_ar)}</h2>
+      <p>${esc(product.description_ar || "نحضّره لكم بعناية وبمكونات طازجة.")}</p>
+      ${variants.length ? `<label class="product-detail-option">اختاروا الحجم أو النوع
+        <select class="product-variant" id="detail-variant"><option value="">اختاروا الحجم أو النوع</option>
+          ${variants.map((variant) => `<option value="${variant.id}" data-price="${variant.price_iqd ?? ""}" ${variant.price_iqd == null || variant.available === false ? "disabled" : ""}>${esc(variant.name_ar)}${variant.price_iqd == null ? " — السعر يحدد لاحقاً" : ` — ${esc(money(variant.price_iqd))}`}</option>`).join("")}
+        </select></label>` : ""}
+      <div class="product-detail-footer"><strong class="product-price" id="detail-price">${esc(money(variants.length ? null : product.price_iqd))}</strong>
+        <button class="button button-primary" type="button" data-modal-add="${product.id}" ${variants.length || product.price_iqd == null ? "disabled" : ""}>أضف للسلة</button></div>
+    </div></div>`;
+  dialog.showModal();
 }
 
 function renderProducts() {
@@ -325,10 +372,10 @@ function applyLanguage(language) {
   localStorage.setItem("venito-language", language);
   $("#language-toggle").textContent = isEnglish ? "ع" : "EN";
   $("#language-toggle").setAttribute("aria-label", isEnglish ? "Switch to Arabic" : "Switch to English");
-  $("#product-search").placeholder = isEnglish ? "What are you craving?" : "ماذا تشتهي؟";
+  $("#product-search").placeholder = isEnglish ? "What are you craving?" : "شنو تحب تطلب اليوم؟";
   $("#open-cart").querySelector("span:nth-child(2)").textContent = isEnglish ? "Cart" : "السلة";
   $("#open-cart").setAttribute("aria-label", isEnglish ? "Shopping cart" : "سلة التسوق");
-  $("#order-now-label").textContent = isEnglish ? "Order now" : "اطلب الآن";
+  $("#order-now-label").textContent = isEnglish ? "Order now" : "اطلب هسه";
   $("#notification-view-cart").textContent = isEnglish ? "View cart" : "عرض السلة";
   document.querySelectorAll("#main-nav a").forEach((link, index) => {
     link.textContent = isEnglish
@@ -338,14 +385,14 @@ function applyLanguage(language) {
   const heroHeading = document.querySelector(".hero h1");
   const heroText = document.querySelector(".hero-content > p");
   if (isEnglish) {
-    heroHeading.innerHTML = "Sweet moments<br>start <em>here</em>";
-    heroText.textContent = "From the first creamy layer to the last crumb... we make every piece with love.";
+    heroHeading.innerHTML = "What are you craving?<br>Make it <em>sweet</em>";
+    heroText.textContent = "Fresh cakes, pastries and sweets, made with care in Baghdad.";
   } else {
-    heroHeading.innerHTML = "لحظاتكم الحلوة<br>تبدأ <em>من هنا</em>";
-    heroText.textContent = "من أول طبقة كريمة إلى آخر فتاتة... نصنع كل قطعة بحب لتكون ذكرى لا تُنسى.";
+    heroHeading.innerHTML = "شنو تحبون تطلبون؟<br>لحظتكم <em>أحلى ويانا</em>";
+    heroText.textContent = "كيك ومعجنات وحلويات طازجة، نحضّرها بعناية حتى تجمعكم على طعم تحبّوه.";
   }
   const menuButton = document.querySelector(".hero-actions .button-light");
-  if (menuButton) menuButton.innerHTML = isEnglish ? "Explore our menu <span>←</span>" : "اكتشفوا قائمتنا <span>←</span>";
+  if (menuButton) menuButton.innerHTML = isEnglish ? "Explore our menu <span>←</span>" : "تسوّقوا هسه <span>←</span>";
   if (state.storeStatusAvailable) {
     $("#store-status-badge-text").textContent = state.storeOpen
       ? (isEnglish ? "Open now" : "مفتوح الآن")
@@ -393,6 +440,7 @@ async function init() {
     state.category = button.dataset.category;
     renderCategories();
     loadProducts();
+    $("#menu").scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
   $("#collection-tabs").addEventListener("click", (event) => {
@@ -403,6 +451,43 @@ async function init() {
   });
 
   const productGrids = [$("#products"), $("#collection-products")];
+  $("#product-dialog-content").addEventListener("change", (event) => {
+    if (event.target.id !== "detail-variant") return;
+    const option = event.target.selectedOptions[0];
+    const price = option?.dataset.price;
+    $("#detail-price").textContent = price ? money(Number(price)) : "اختاروا الحجم";
+    $("#product-dialog-content [data-modal-add]").disabled = !price;
+  });
+
+  async function addToCart(selectedProduct, variantId = null) {
+    if (selectedProduct.variants?.length && !variantId) return toast("اختاروا الحجم أو النوع أولاً.");
+    if (!state.storeOpen) return toast("المتجر مغلق الآن، ولا يمكن تأكيد الطلب.");
+    const key = `${selectedProduct.id}:${variantId || ""}`;
+    const existing = state.cart.find((item) => `${item.productId}:${item.variantId || ""}` === key);
+    if (existing) existing.quantity = Math.min(99, existing.quantity + 1);
+    else {
+      const variant = selectedProduct.variants?.find((item) => item.id === variantId);
+      const price = variant ? variant.price_iqd : selectedProduct.price_iqd;
+      if (price == null) return toast("لم يحدد المتجر سعر هذا المنتج بعد.");
+      state.cart.push({
+        productId: selectedProduct.id, variantId, name: selectedProduct.name_ar,
+        variantName: variant?.name_ar || "", price, quantity: 1, lineTotal: price,
+      });
+    }
+    renderCart();
+    try {
+      await saveCart();
+      const message = document.documentElement.lang === "en"
+        ? `${selectedProduct.name_ar} was added to the cart successfully`
+        : `انضاف ${selectedProduct.name_ar} للسلة`;
+      showNotification(message);
+      return true;
+    } catch (error) {
+      toast(error.message);
+      return false;
+    }
+  }
+
   productGrids.forEach((grid) => grid.addEventListener("change", (event) => {
     const select = event.target.closest("[data-variants]");
     if (!select) return;
@@ -423,40 +508,31 @@ async function init() {
   }, true));
 
   async function addProductFromGrid(event) {
+    const detailsButton = event.target.closest("[data-details]");
+    if (detailsButton) {
+      const product = findProduct(detailsButton.dataset.details);
+      if (product) openProductDetails(product);
+      return;
+    }
     const button = event.target.closest("[data-add]");
     if (!button) return;
-    const product = state.products.find((item) => String(item.id) === button.dataset.add);
-    const collectionProduct = Object.values(state.collections).flat().find((item) => String(item.id) === button.dataset.add);
-    const selectedProduct = product || collectionProduct;
+    const selectedProduct = findProduct(button.dataset.add);
     if (!selectedProduct) return;
     const variantSelect = button.closest(".product-card").querySelector(`[data-variants="${selectedProduct.id}"]`);
     const variantId = variantSelect?.value ? Number(variantSelect.value) : null;
-    if (selectedProduct.variants?.length && !variantId) return toast("اختاروا الحجم أو النوع أولاً.");
-    if (!state.storeOpen) return toast("المتجر مغلق الآن، ولا يمكن تأكيد الطلب.");
-    const key = `${selectedProduct.id}:${variantId || ""}`;
-    const existing = state.cart.find((item) => `${item.productId}:${item.variantId || ""}` === key);
-    if (existing) existing.quantity = Math.min(99, existing.quantity + 1);
-    else {
-      const variant = selectedProduct.variants?.find((item) => item.id === variantId);
-      const price = variant ? variant.price_iqd : selectedProduct.price_iqd;
-      if (price == null) return toast("لم يحدد المتجر سعر هذا المنتج بعد.");
-      state.cart.push({
-        productId: selectedProduct.id, variantId, name: selectedProduct.name_ar,
-        variantName: variant?.name_ar || "", price, quantity: 1, lineTotal: price,
-      });
-    }
-    renderCart();
-    try {
-      await saveCart();
-      const message = document.documentElement.lang === "en"
-        ? `${selectedProduct.name_ar} was added to the cart successfully`
-        : `تمت إضافة ${selectedProduct.name_ar} إلى السلة بنجاح`;
-      showNotification(message);
-    } catch (error) {
-      toast(error.message);
-    }
+    addToCart(selectedProduct, variantId);
   }
   productGrids.forEach((grid) => grid.addEventListener("click", addProductFromGrid));
+  $("#product-dialog-content").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-modal-add]");
+    if (!button) return;
+    const product = findProduct(button.dataset.modalAdd);
+    if (!product) return;
+    const variantId = $("#detail-variant")?.value ? Number($("#detail-variant").value) : null;
+    button.disabled = true;
+    if (await addToCart(product, variantId)) $("#product-dialog").close();
+    else button.disabled = false;
+  });
 
   $("#product-search").addEventListener("input", () => {
     clearTimeout(searchTimer);

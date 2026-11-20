@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#49322a">
-  <title>الإدارة | VENITO</title>
+  <meta name="theme-color" content="#526b61">
+  <title>الإدارة | VENTO</title>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/admin.css">
@@ -12,7 +12,7 @@
 </head>
 <body>
   <section class="login-screen" id="login-screen">
-    <a class="brand login-brand" href="/"><span class="brand-mark">V</span><span class="brand-name"><strong>VENITO</strong><small>بوابة إدارة المتجر</small></span></a>
+    <a class="brand login-brand" href="/"><span class="brand-mark">V</span><span class="brand-name"><strong>VENTO</strong><small>بوابة إدارة المتجر</small></span></a>
     <form class="login-card" id="login-form">
       <span class="eyebrow eyebrow-dark">مرحباً بعودتكم</span>
       <h1>تسجيل <em>الدخول</em></h1>
@@ -23,12 +23,12 @@
       <button class="button button-primary full-width" type="submit">دخول إلى لوحة التحكم <span>←</span></button>
       <a class="back-home" href="/">العودة إلى المتجر</a>
     </form>
-    <span class="login-copyright">© VENITO · Baghdad</span>
+    <span class="login-copyright">© VENTO · Baghdad</span>
   </section>
 
   <div class="admin-app hidden" id="admin-app">
     <aside class="sidebar" id="sidebar">
-      <a class="brand side-brand" href="/"><span class="brand-mark">V</span><span class="brand-name"><strong>VENITO</strong><small>لوحة الإدارة</small></span></a>
+      <a class="brand side-brand" href="/"><span class="brand-mark">V</span><span class="brand-name"><strong>VENTO</strong><small>لوحة الإدارة</small></span></a>
       <div class="side-label">القائمة الرئيسية</div>
       <nav class="side-nav" id="side-nav">
         <button class="nav-item active" data-view="overview"><span aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span>نظرة عامة</button>
@@ -50,7 +50,7 @@
       <header class="admin-topbar"><button class="mobile-menu-toggle" id="admin-menu-toggle" aria-label="فتح القائمة">☰</button><div><span class="eyebrow eyebrow-dark">مساحة العمل</span><h1 id="page-title">نظرة عامة</h1></div><a class="view-store" href="/" target="_blank" rel="noopener noreferrer">عرض المتجر <span>↗</span></a></header>
       <div class="admin-content">
         <section class="admin-view active" data-panel="overview">
-          <div class="welcome-row"><div><h2>أهلاً بكم في فينيتو <span>✳</span></h2><p>إليكم ملخص حركة المتجر اليوم.</p></div><span class="today-date" id="today-date"></span></div>
+          <div class="welcome-row"><div><h2>أهلاً بكم في فينتو <span>✳</span></h2><p>إليكم ملخص حركة المتجر اليوم.</p></div><span class="today-date" id="today-date"></span></div>
           <div class="stat-grid" id="stats-grid"></div>
           <div class="dashboard-shortcuts" aria-label="إجراءات سريعة">
             <button class="button button-secondary" data-jump="orders">إدارة الطلبات</button>
@@ -63,7 +63,7 @@
         </section>
 
         <section class="admin-view" data-panel="products">
-          <div class="view-toolbar"><div><h2>المنتجات</h2><p>أضيفوا وعدّلوا منتجات قائمة فينيتو وأسعارها.</p></div><button class="button button-primary" data-action="add-product">+ إضافة منتج</button></div>
+          <div class="view-toolbar"><div><h2>المنتجات</h2><p>أضيفوا وعدّلوا منتجات قائمة فينتو وأسعارها.</p></div><button class="button button-primary" data-action="add-product">+ إضافة منتج</button></div>
           <div class="panel-card"><div class="table-wrap"><table><thead><tr><th>المنتج</th><th>التصنيف</th><th>السعر</th><th>التوفر</th><th>إجراءات</th></tr></thead><tbody id="products-table"></tbody></table></div></div>
         </section>
 
@@ -112,7 +112,7 @@
               <div class="settings-grid"><label>الاسم التجاري<input name="business_name" maxlength="100"></label><label>الاسم بالعربية<input name="business_name_ar" maxlength="160"></label><label>رقم الهاتف<input name="phone" maxlength="40" dir="ltr"></label><label>العنوان<input name="address" maxlength="250"></label><label>إنستغرام<input name="instagram_url" placeholder="https://" dir="ltr"></label><label>فيسبوك<input name="facebook_url" placeholder="https://" dir="ltr"></label><label>العملة<input value="الدينار العراقي (IQD)" disabled></label></div>
             </div>
             <div class="panel-card settings-card"><div class="panel-heading"><div><h3>شعار المتجر والإيصال</h3><p>يظهر الشعار وبيانات المتجر في إيصالات PDF. صور PNG أو JPEG حتى 600 كيلوبايت.</p></div></div>
-              <div class="settings-grid"><label>رفع شعار المتجر<input id="business-logo-file" type="file" accept="image/png,image/jpeg"></label><label>رسالة أسفل الإيصال<input name="receipt_footer" maxlength="250" placeholder="شكراً لثقتكم بفينيتو"></label></div>
+              <div class="settings-grid"><label>رفع شعار المتجر<input id="business-logo-file" type="file" accept="image/png,image/jpeg"></label><label>رسالة أسفل الإيصال<input name="receipt_footer" maxlength="250" placeholder="شكراً لثقتكم بفينتو"></label></div>
               <div class="logo-preview-row"><img id="business-logo-preview" class="hidden" alt="معاينة شعار المتجر"><button class="button button-secondary" type="button" data-action="remove-logo">إزالة الشعار</button></div>
             </div>
             <div class="panel-card settings-card"><div class="panel-heading"><div><h3>التوفر والتوصيل</h3><p>إيقاف المتجر يمنع تأكيد الطلبات، وإيقاف التوصيل يخفي المناطق ويمنع إنشاء طلب جديد.</p></div></div>

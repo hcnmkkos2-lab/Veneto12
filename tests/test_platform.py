@@ -564,11 +564,24 @@ class PlatformTests(unittest.TestCase):
         self.assertTrue(health["ok"])
         status, page = self.call("GET", "/")
         self.assertEqual(status, 200)
-        self.assertIn("حلويات ومعجنات فينيتو".encode(), page)
+        self.assertIn("حلويات ومعجنات فينتو".encode(), page)
+        self.assertIn(b"VENTO", page)
+        self.assertIn(b'id="product-dialog"', page)
         self.assertIn(b'id="area-select-cart"', page)
+        status, categories = self.call("GET", "/api/categories")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(categories), 9)
+        self.assertIn("الكيك والتورتات", [category["name_ar"] for category in categories])
+        self.assertIn("أطباق الضيافة", [category["name_ar"] for category in categories])
         status, admin = self.call("GET", "/admin")
         self.assertEqual(status, 200)
         self.assertIn("الدخول".encode(), admin)
+
+    def test_startup_does_not_create_products_with_sample_prices(self):
+        database.migrate()
+        with database.connect() as db:
+            products = db.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+        self.assertEqual(products, 0)
 
     def test_backup_is_a_readable_sqlite_snapshot(self):
         backup_path = create_backup(Path(self.temp_dir.name) / "backup.sqlite3")
@@ -577,7 +590,7 @@ class PlatformTests(unittest.TestCase):
         try:
             self.assertEqual(
                 snapshot.execute("SELECT COUNT(*) FROM product_categories").fetchone()[0],
-                7,
+                9,
             )
         finally:
             snapshot.close()
