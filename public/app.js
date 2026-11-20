@@ -55,13 +55,31 @@ function toast(message) {
   toastTimer = setTimeout(() => node.classList.remove("visible"), 2800);
 }
 
+const categoryPhotos = {
+  all: "photo-1606313564200-e75d5e30476c",
+  cakes: "photo-1578985545062-69928b1d9587",
+  pastries: "photo-1555507036-ab1f4038808a",
+  croissants: "photo-1555507036-ab1f4038808a",
+  cookies: "photo-1499636136210-6f4ee915583e",
+  "arabic-sweets": "photo-1606312619070-d48b4c652a52",
+  "western-desserts": "photo-1606313564200-e75d5e30476c",
+  "special-occasions": "photo-1578985545062-69928b1d9587",
+  "hospitality-trays": "photo-1555507036-ab1f4038808a",
+  chocolate: "photo-1606313564200-e75d5e30476c",
+};
+
+function categoryPhoto(slug = "all") {
+  const image = categoryPhotos[slug] || categoryPhotos.all;
+  return `https://images.unsplash.com/${image}?auto=format&fit=crop&w=500&q=80`;
+}
+
 function renderCategories() {
   const all = `<button class="category-chip category-card ${state.category === "" ? "active" : ""}" data-category="">
-    <span class="category-icon" aria-hidden="true">${categoryIcon("all")}</span><span class="category-name">كل المنتجات</span>
+    <span class="category-icon" aria-hidden="true" style="--category-photo:url('${categoryPhoto()}')">${categoryIcon("all")}</span><span class="category-name">كل المنتجات</span>
     <small>تسوّقوا الكل</small></button>`;
   $("#categories").innerHTML = all + state.categories.map((category) =>
     `<button class="category-chip category-card ${state.category === String(category.id) ? "active" : ""}" data-category="${category.id}">
-      <span class="category-icon" aria-hidden="true">${categoryIcon(category.slug, category.name_ar)}</span>
+      <span class="category-icon" aria-hidden="true" style="--category-photo:url('${categoryPhoto(category.slug)}')">${categoryIcon(category.slug, category.name_ar)}</span>
       <span class="category-name">${esc(category.name_ar)}</span>
       <small>${Number(category.product_count || 0).toLocaleString("ar-IQ")} منتجات</small></button>`
   ).join("");
@@ -98,7 +116,10 @@ function productCard(product) {
           <option value="">اختاروا الحجم أو النوع</option>${variants.map((variant) => `<option value="${variant.id}" data-price="${variant.price_iqd ?? ""}" ${variant.price_iqd == null ? "disabled" : ""}>${esc(variant.name_ar)}${variant.price_iqd == null ? " — السعر غير محدد" : ` — ${esc(money(variant.price_iqd))}`}</option>`).join("")}
         </select>` : ""}
         <div class="product-bottom"><span class="product-price" data-price-for="${product.id}">${esc(money(initialPrice))}</span>
-          <button class="add-button" data-add="${product.id}" aria-label="إضافة ${esc(product.name_ar)} إلى السلة" ${initialPrice == null && !variants.length ? "disabled" : ""}>+</button>
+          <button class="add-button" data-add="${product.id}" aria-label="إضافة ${esc(product.name_ar)} إلى السلة" ${initialPrice == null && !variants.length ? "disabled" : ""}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.2 10.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 2-1.6L20.5 8H6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="19" r="1.3" fill="currentColor"/><circle cx="17" cy="19" r="1.3" fill="currentColor"/></svg>
+            <span>أضف للسلة</span>
+          </button>
         </div>
       </div>
     </article>`;
@@ -174,6 +195,7 @@ function cartSubtotal() {
 
 function renderCart() {
   $("#cart-count").textContent = cartCount().toLocaleString("ar-IQ");
+  $("#mobile-cart-count").textContent = cartCount().toLocaleString("ar-IQ");
   $("#cart-subtotal").textContent = money(cartSubtotal());
   $("#checkout-button").disabled = state.cart.length === 0 || !state.storeOpen
     || !state.areas.some((area) => String(area.id) === state.selectedAreaId);
@@ -542,6 +564,7 @@ async function init() {
     }, 250);
   });
   $("#open-cart").addEventListener("click", openCart);
+  $("#mobile-open-cart").addEventListener("click", openCart);
   $("#language-toggle").addEventListener("click", () => {
     applyLanguage(document.documentElement.lang === "ar" ? "en" : "ar");
   });
