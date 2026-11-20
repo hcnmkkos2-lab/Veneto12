@@ -691,4 +691,20 @@ html[data-theme="dark"] .product-detail-image{background:#344743}
   .hero-feature-pills{margin-top:12px}.hero-feature-pills span{min-height:30px;padding:7px 9px;font-size:9px}.hero-location-button{min-height:44px;font-size:11px}
   .category-product-sections{padding:12px 15px 20px}.category-section-heading h2{font-size:22px}.category-product-grid{grid-auto-columns:210px!important}.category-product-grid .product-card{border-radius:18px}.favorite-button{width:34px;height:34px}
   .delivery-page{padding-bottom:calc(24px + env(safe-area-inset-bottom))}
+
+  .hero{height:390px;min-height:390px;max-height:390px;padding:0}
+  .hero-photo,.hero-shade{height:390px}
+  .hero-photo{border-radius:24px;background-position:center 43%}
+  .hero-shade{background:linear-gradient(0deg,rgba(35,52,47,.86),rgba(35,52,47,.18) 58%,rgba(35,52,47,.05))}
+  .hero-content{position:absolute;right:12px;bottom:42px;left:12px;z-index:3;margin:0;padding:9px 11px 8px;border:1px solid rgba(255,255,255,.28);border-radius:15px;background:rgba(47,62,61,.48);backdrop-filter:blur(6px)}
+  .hero-content .eyebrow{font-size:8px;line-height:1.2}
+  .hero-content .eyebrow i{width:12px}
+  .hero h1{margin:4px 0 3px;font-size:18px!important;line-height:1.25!important;letter-spacing:0}
+  .hero h1 em{display:inline;color:#f1eadf}
+  .hero-content>p{max-width:none;margin:0;font-size:9px!important;line-height:1.35!important}
+  .hero-actions{margin-top:6px;gap:6px}
+  .hero-actions .button,.hero-location-button{min-height:32px!important;height:32px;padding:0 10px!important;font-size:9px!important}
+  .hero-feature-pills{margin-top:5px;gap:4px}
+  .hero-feature-pills span{min-height:22px;padding:4px 7px;font-size:8px;line-height:1}
+  .hero-bottom{position:absolute;right:12px;bottom:10px;left:12px;margin:0;padding:0;background:transparent;font-size:7px}
 }

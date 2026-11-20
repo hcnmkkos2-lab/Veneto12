@@ -425,14 +425,14 @@ function applyLanguage(language) {
   const heroHeading = document.querySelector(".hero h1");
   const heroText = document.querySelector(".hero-content > p");
   if (isEnglish) {
-    heroHeading.innerHTML = "What are you craving?<br>Make it <em>sweet</em>";
-    heroText.textContent = "Fresh cakes, pastries and sweets, made with care in Baghdad.";
+    heroHeading.innerHTML = "Venito <em>sweets &amp; pastries</em>";
+    heroText.textContent = "Fresh sweets and pastries made with love in Baghdad.";
   } else {
-    heroHeading.innerHTML = "شنو تحبون تطلبون؟<br>لحظتكم <em>أحلى ويانا</em>";
-    heroText.textContent = "كيك ومعجنات وحلويات طازجة، نحضّرها بعناية حتى تجمعكم على طعم تحبّوه.";
+    heroHeading.innerHTML = "فيـنيتو <em>للحلويات والكيك والمعجنات</em>";
+    heroText.textContent = "نكهات تصنع يومك سعادة — كل لقمة حكاية سعادة.";
   }
   const menuButton = document.querySelector(".hero-actions .button-light");
-  if (menuButton) menuButton.innerHTML = isEnglish ? "Explore our menu <span>←</span>" : "تسوّقوا هسه <span>←</span>";
+  if (menuButton) menuButton.innerHTML = isEnglish ? "Discover products <span>←</span>" : "اكتشف المنتجات <span>←</span>";
   if (state.storeStatusAvailable) {
     $("#store-status-badge-text").textContent = state.storeOpen
       ? (isEnglish ? "Open now" : "مفتوح الآن")
